@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EEP Core 流程活動元件（SP7）</title>
+<title>EEP Core WebClient 路由與控制器（SP7）</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown-light.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
@@ -84,8 +84,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
 <button id="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('show')">☰</button>
 <div id="sidebar">
   <div id="sidebar-header">
-    <a id="home-btn" href="#流程活動元件列表" onclick="loadPage('流程活動元件列表')">
-      <h2>EEP Core 流程活動元件</h2>
+    <a id="home-btn" href="#路由與控制器列表" onclick="loadPage('路由與控制器列表')">
+      <h2>WebClient 路由與控制器</h2>
     </a>
     <div id="nav-links">
       <a href="index.html">首頁</a>
@@ -93,35 +93,41 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
       <a href="server_sp7.html">Server</a>
       <a href="rwd_sp7.html">RWD</a>
       <a href="flow_sp7.html">Flow</a>
-      <a href="webclient_sp7.html">WebClient</a>
+      <a href="webclient_sp7.html" class="active">WebClient</a>
     </div>
-    <input id="search-box" type="text" placeholder="搜尋元件...">
+    <input id="search-box" type="text" placeholder="搜尋控制器...">
   </div>
   <div id="sidebar-nav"></div>
 </div>
 <div id="content"><div class="markdown-body" id="md-content"><div class="loading">載入中...</div></div></div>
 <div id="toc"><div id="toc-title">本頁目錄</div><div id="toc-links"></div></div>
 <script>
-const MD_DIR = 'Flow_SP7/';
+const MD_DIR = 'WebClient_SP7/';
 const GROUPS = [
-  { title: '簽核活動', open: true, items: [
-    ['StandActivity', '標準簽核'], ['ApproveActivity', '主管簽核'],
-    ['MultiApproveActivity', '多人會簽'], ['SeqApproveActivity', '循序會簽'],
+  { title: '啟動與路由', open: true, items: [
+    ['Startup', '應用程式啟動設定'], ['RouteTransformer', '動態路由轉換器'],
   ]},
-  { title: '通知與預警', open: true, items: [
-    ['NotifyActivity', '知會通知'], ['WarningActivity', '預警活動'],
+  { title: '核心控制器', open: true, items: [
+    ['MainController', '核心（頁面渲染/資料操作）'], ['DesignController', '設計介面'],
+    ['HomeController', '首頁'],
   ]},
-  { title: '流程控制', open: true, items: [
-    ['ParallelActivity', '並行活動'], ['IfElseActivity', '條件判斷'],
-    ['ValidateActivity', '驗證活動'], ['ReturnActivity', '退回活動'],
-    ['RejectActivity', '作廢活動'],
+  { title: '認證與帳號', open: true, items: [
+    ['AccountController', '帳號管理'], ['LogonController', '登入頁面'],
+    ['SSOController', 'SSO 單一登入'], ['AzureSSOController', 'Azure AD SSO'],
+    ['LdapSSOController', 'LDAP/AD SSO'], ['LicenseController', '授權管理'],
   ]},
-  { title: '特殊活動', open: true, items: [
-    ['ProcedureActivity', '程序活動'], ['SubFlowActivity', '子流程'],
-    ['DetailFlowActivity', '明細流程（會簽）'], ['RootActivity', '根活動（流程起點）'],
+  { title: '流程', open: true, items: [
+    ['FlowController', '流程頁面'], ['FlowAPIController', '流程 REST API'],
+    ['NetFlowController', '流程設計器'],
   ]},
-  { title: '核心類別', open: false, items: [
-    ['Activity', '活動基底類別'], ['Enum', '列舉定義'],
+  { title: '檔案與資源', open: false, items: [
+    ['FileController', '檔案上傳/下載'], ['ExcelController', 'Excel 匯出'],
+    ['ExcelfileController', 'Excel 檔案處理'], ['ImagesController', '圖片處理'],
+    ['ScriptsController', '動態 JS'], ['StyleSheetsController', '動態 CSS'],
+  ]},
+  { title: '其他', open: false, items: [
+    ['UserDesignController', '使用者設計'], ['SignatureController', '電子簽章'],
+    ['LineNotifyController', 'LINE 通知'],
   ]},
 ];
 marked.setOptions({ highlight: function(code, lang) { if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value; return hljs.highlightAuto(code).value; } });
@@ -157,7 +163,7 @@ async function loadPage(name) {
     if (active) { active.classList.add('active'); active.scrollIntoView({ block: 'nearest' }); }
     document.getElementById('content').scrollTop = 0;
     history.replaceState(null, '', `#${name}`);
-    document.title = `${name} — EEP Core 流程活動元件`;
+    document.title = `${name} — WebClient 路由與控制器`;
     document.getElementById('sidebar').classList.remove('show');
   } catch (e) { content.innerHTML = `<p>無法載入 ${MD_DIR}${name}.md：${e.message}</p>`; }
 }
@@ -185,7 +191,7 @@ document.getElementById('search-box').addEventListener('input', function() {
   });
 });
 buildSidebar();
-const hash = location.hash.replace('#', '') || '流程活動元件列表';
+const hash = location.hash.replace('#', '') || '路由與控制器列表';
 loadPage(hash);
 window.addEventListener('hashchange', () => { const name = location.hash.replace('#', ''); if (name) loadPage(name); });
 </script>
