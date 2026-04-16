@@ -256,6 +256,104 @@ SendTo 支援多種動態指定簽核人的語法：
 
 4. **退回與收回時不重新解析 SendTo**：Start() 中只在非 Return/Retake 狀態時才解析 SendTo，退回時沿用原有的 Role/User 值。
 
-5. **逾時時間取最小值**：活動逾時 = min(流程根活動逾時, 活動開始時間 + ExpDay)，確保不會超過流程整體期限。
+5. **逾時機制詳細說明**（見下方獨立章節）
 
 6. **CheckPlus 驗證**：Execute() 和 Reset() 時會檢查是否還有未完成的加簽，若有則拋出 `flowPlusApproving` 例外，防止在加簽未完成時就結束活動。
+
+---
+
+## ⚠️ ExpDay 逾時機制詳細說明
+
+### 基本概念
+
+ExpDay 是 `double` 型別，單位為**日曆天**（Calendar Days），支援小數。
+
+> **重要**：ExpDay 計算的是**日曆天**，不是工作天。不會排除週末、假日，也**不參考任何行事曆或假日表**。
+
+### 設定範例
+
+| ExpDay 值 | 意義 | 換算 |
+|-----------|------|------|
+| `0` | 不限時（預設） | 永不逾時 |
+| `1` | 1 天 | 24 小時 |
+| `0.5` | 半天 | 12 小時 |
+| `0.25` | 6 小時 | — |
+| `0.167` | 約 4 小時 | 0.167 × 24 = 4.008 小時 |
+| `0.0417` | 約 1 小時 | 0.0417 × 24 ≈ 1 小時 |
+| `3` | 3 天 | 72 小時 |
+| `7` | 7 天 | 168 小時 |
+
+### 計算公式
+
+```csharp
+// 原始碼：StandActivity.cs
+public DateTime? ExpDatetime
+{
+    get
+    {
+        var dateTimes = new List<DateTime> { };
+        
+        // 1. 流程根活動的全域逾時
+        var rootExpDatetime = Instance.RootActivity.ExpDatetime;
+        if (rootExpDatetime.HasValue)
+        {
+            dateTimes.Add(rootExpDatetime.Value);
+        }
+        
+        // 2. 本活動的逾時（活動開始時間 + ExpDay 天）
+        if (ExpDay > 0)
+        {
+            dateTimes.Add(StartDateTime.AddDays(ExpDay));
+        }
+        
+        // 3. 取最小值（最早到期的那個）
+        if (dateTimes.Count > 0)
+        {
+            return dateTimes.Min();
+        }
+        return null;  // 不限時
+    }
+}
+```
+
+**關鍵**：`DateTime.AddDays(double)` 是 .NET 原生方法，直接加上日曆天的時間量，**不考慮任何假日邏輯**。
+
+### 逾時判斷（前端）
+
+```javascript
+// bootstrap.infolight.nodeflow.js
+rowStyler: function(index, row) {
+    if (row.ExpDatetime) {
+        var expDate = new Date(row.ExpDatetime);
+        var now = new Date();
+        if (expDate.getTime() < now.getTime()) {
+            return 'color:#F00';  // 逾時顯示紅色
+        }
+    }
+}
+```
+
+前端在待辦清單中，將逾時的項目**文字變紅色**顯示。
+
+### 兩層逾時機制
+
+| 層級 | 設定位置 | 計算方式 | 說明 |
+|------|---------|---------|------|
+| **流程級** | RootActivity.ExpDay | 流程啟動時間 + ExpDay | 整個流程的最終期限 |
+| **活動級** | StandActivity.ExpDay | 活動開始時間 + ExpDay | 單一關卡的期限 |
+
+最終逾時 = `Min(流程級, 活動級)`，確保單一關卡的期限不會超過流程整體期限。
+
+### 常見問題
+
+#### Q: 如何設定 4 小時逾時？
+A: `ExpDay = 0.17`（0.17 × 24 = 4.08 小時）。因為設計介面是 2 位小數的數字框，實際精度到分鐘級。
+
+#### Q: 是否排除週末和假日？
+A: **否**。ExpDay 是純日曆天計算（`DateTime.AddDays`），不參考任何行事曆、假日表或工作日設定。週五下午設定 1 天逾時 = 週六下午到期。
+
+#### Q: 逾時後會自動簽核嗎？
+A: **不會自動簽核**。逾時只是在前端待辦清單中**顯示紅色**，不會觸發任何自動動作。若需要逾時自動處理，需搭配 `RootActivity.DelaySendMail`（逾時自動發郵件通知）或自訂排程。
+
+#### Q: 逾時精度是多少？
+A: 設計介面的 NumberboxEditor 允許 2 位小數，最小有效設定約 `0.01` 天 = 14.4 分鐘。`DateTime.AddDays` 本身支援到 tick 級精度。
