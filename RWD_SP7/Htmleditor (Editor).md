@@ -48,6 +48,38 @@
 
 在 `$.fn.htmleditor` 外部（第 15984–15999 行），若全域 `UM` 物件存在，會覆寫 `UM.commands.insertimage.execCommand`：插入圖片時自動套用 `imageHeight` 設定的高度至每張圖片。
 
+## ⚠️ 注意事項：ValidateXss 必須前後端都關閉
+
+使用 Htmleditor 時，因為編輯器產生的內容包含 HTML 標籤（`<b>`、`<img>`、`<a>` 等），會被 EEP 的 XSS 驗證攔截導致存檔失敗。**必須同時關閉前後端的 XSS 驗證**：
+
+### 後端（Server 元件）
+
+在模組 JSON 的 UpdateComponent 設定 `validateXss: false`：
+
+```json
+{
+  "type": "updatecomponent",
+  "id": "ucMain",
+  "infocommand": "cmdMain",
+  "validateXss": false
+}
+```
+
+### 前端（RWD 元件）
+
+在 DataGrid 或 DataForm 的 Column 設定中，確認含有 Htmleditor 的欄位不會被前端 XSS 檢查攔截。若整個表單都有 HTML 欄位，也可在 DataForm/DataGrid 層級設定。
+
+### 為什麼需要兩端都關
+
+| 層級 | 檢查位置 | 程式碼 |
+|------|---------|--------|
+| **前端** | DataGrid `endEdit` → `validateRow` | `$.xssValidate(value)` |
+| **後端** | UpdateComponent `GetInsertSql` / `GetUpdateSql` | `ValidateValue(v)` — 正則驗證 |
+
+任一端未關閉都會導致含 HTML 標籤的內容被拒絕（前端彈出 XSS 警告、後端拋出 `validateXss` 例外）。
+
 ## 備註
 
 - 渲染為 `<div>` 加上 `bootstrap-htmleditor` CSS 類別。
+- 使用 UMeditor（UEditor Mini）作為富文字編輯器核心。
+- `_src` ↔ `onclick` 屬性互轉是為了讓圖片在檢視模式下可點擊預覽，編輯模式下保留原始路徑。

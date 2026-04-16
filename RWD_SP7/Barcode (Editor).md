@@ -12,7 +12,7 @@
 | 屬性 | 類型 | 設計介面 | 預設值 | 說明 |
 |------|------|----------|--------|------|
 | **height** | int | 數字框 `[NumberboxEditor]` | 120 | 條碼高度（px） |
-| **format** | BarcodeFormat | 列舉 | — | 條碼格式 |
+| **format** | BarcodeFormat | 列舉 | Code128 | 條碼格式：`Code39` / `Code128` / `Ean13` / `Ean128` |
 
 ## 前端行為（JavaScript）
 
