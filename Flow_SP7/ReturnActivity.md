@@ -10,7 +10,7 @@
 
 ## 繼承
 
-```
+```text
 Activity → SystemActivity → ReturnActivity
 ```
 
@@ -119,7 +119,7 @@ public virtual Activity GetPreviousActivity(string returnTo)
 
 ### 並行分支中的退回限制（重點）
 
-```
+```text
 RootActivity
 ├── StandActivity A（關卡 A）
 ├── ParallelActivity          ← Sequence = false
@@ -146,7 +146,7 @@ RootActivity
 
 ### Instance.Return() 完整流程
 
-```
+```text
 1. 設定 _status = InstanceStatus.Return
 2. 取得當前活動 → 檢查 SupportReturn
 3. Clone 當前活動（用於代理通知）
