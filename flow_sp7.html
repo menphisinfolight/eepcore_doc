@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EEP Core 系統資料表</title>
+<title>EEP Core 流程活動元件（SP7）</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown-light.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
@@ -21,7 +21,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
 #sidebar-header h2 { font-size: 16px; color: #e2e8f0; margin: 0; }
 #home-btn { text-decoration: none; display: block; padding: 6px 10px; border-radius: 6px; margin-bottom: 10px; transition: background 0.15s; }
 #home-btn:hover { background: rgba(59,130,246,0.15); }
-#nav-links { display: flex; gap: 6px; margin-bottom: 10px; }
+#nav-links { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
 #nav-links a { font-size: 11px; color: #94a3b8; text-decoration: none; padding: 3px 8px; border-radius: 4px; border: 1px solid #475569; }
 #nav-links a:hover { color: #e2e8f0; border-color: #64748b; }
 #nav-links a.active { color: #60a5fa; border-color: #3b82f6; background: rgba(59,130,246,0.15); }
@@ -84,111 +84,108 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
 <button id="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('show')">☰</button>
 <div id="sidebar">
   <div id="sidebar-header">
-    <a id="home-btn" href="#index" onclick="loadPage('index')">
-      <h2>EEP Core 系統資料表</h2>
+    <a id="home-btn" href="#流程活動元件列表" onclick="loadPage('流程活動元件列表')">
+      <h2>EEP Core 流程活動元件</h2>
     </a>
     <div id="nav-links">
       <a href="index.html">首頁</a>
-      <a href="tables.html" class="active">資料表</a>
+      <a href="tables.html">資料表</a>
       <a href="server_sp7.html">Server</a>
       <a href="rwd_sp7.html">RWD</a>
-      <a href="flow_sp7.html">Flow</a>
+      <a href="flow_sp7.html" class="active">Flow</a>
     </div>
-    <input id="search-box" type="text" placeholder="搜尋資料表...">
+    <input id="search-box" type="text" placeholder="搜尋元件...">
   </div>
   <div id="sidebar-nav"></div>
 </div>
 <div id="content"><div class="markdown-body" id="md-content"><div class="loading">載入中...</div></div></div>
 <div id="toc"><div id="toc-title">本頁目錄</div><div id="toc-links"></div></div>
 <script>
-const MD_DIR = 'SystemTables/';
+const MD_DIR = 'Flow_SP7/';
 const GROUPS = [
-  { title: '系統核心', items: [
-    ['COLDEF', '欄位定義中繼資料'], ['SYSAUTONUM', '自動編號流水號'], ['SYS_PARAS', '系統參數'],
-    ['SYS_LANGUAGE', '多語系辭典'], ['SYS_REFVAL', '下拉選單參照定義'], ['SYS_REFVAL_D1', '下拉選單參照明細'],
+  { title: '簽核活動', open: true, items: [
+    ['StandActivity', '標準簽核'], ['ApproveActivity', '主管簽核'],
+    ['MultiApproveActivity', '多人會簽'], ['SeqApproveActivity', '循序會簽'],
   ]},
-  { title: '使用者與權限', items: [
-    ['USERS', '使用者主檔'], ['USERS_LOG', '登入歷程'], ['USERS_LOGON', '登入驗證控制'],
-    ['USERGROUPS', '使用者-群組關聯'], ['USERMENUS', '使用者選單權限'], ['USERMENUCONTROL', '使用者控制項權限'],
-    ['USERDEVICES', '裝置註冊'], ['SYS_PERSONAL', '個人化設定'], ['SYS_USERDEF', '自訂報表定義'],
-    ['SYS_USERS_AGENT', '使用者代理'],
+  { title: '通知與預警', open: true, items: [
+    ['NotifyActivity', '知會通知'], ['WarningActivity', '預警活動'],
   ]},
-  { title: '群組與角色', items: [
-    ['GROUPS', '群組/角色主檔'], ['GROUPMENUS', '群組選單權限'],
-    ['GROUPMENUCONTROL', '群組控制項權限'], ['SYS_ROLES_AGENT', '角色代理設定'],
+  { title: '流程控制', open: true, items: [
+    ['ParallelActivity', '並行活動'], ['IfElseActivity', '條件判斷'],
+    ['ValidateActivity', '驗證活動'], ['ReturnActivity', '退回活動'],
+    ['RejectActivity', '作廢活動'],
   ]},
-  { title: '選單系統', items: [
-    ['MENUITEMTYPE', '方案定義'], ['MENUTABLE', '選單主檔'], ['MENUTABLECONTROL', '控制項定義'],
-    ['MENUCHECKLOG', '簽入/簽出記錄'], ['MENUFAVOR', '我的最愛'],
+  { title: '特殊活動', open: true, items: [
+    ['ProcedureActivity', '程序活動'], ['SubFlowActivity', '子流程'],
+    ['DetailFlowActivity', '明細流程（會簽）'], ['RootActivity', '根活動（流程起點）'],
   ]},
-  { title: '組織架構', items: [
-    ['SYS_ORG', '組織架構主檔'], ['SYS_ORGKIND', '組織類型定義'],
-    ['SYS_ORGLEVEL', '組織層級定義'], ['SYS_ORGROLES', '組織角色關聯'],
-  ]},
-  { title: '流程引擎', items: [
-    ['FLOWINSTANCE', '流程實例'], ['FLOWTODO', '待辦事項'], ['FLOWNOTIFY', '流程通知'],
-    ['FLOWHISTORY', '簽核歷史'], ['FLOWCOMMENT', '流程評論'], ['FLOWCOMMENTDETAIL', '評論接收者明細'],
-    ['FLOWLANGUAGE', '流程多語系名稱'], ['FLOWPHRASE', '常用片語'],
-  ]},
-  { title: '首頁卡片', items: [
-    ['SYS_CARDS', '卡片定義'], ['USERCARDS', '使用者卡片權限'], ['GROUPCARDS', '群組卡片權限'],
-  ]},
-  { title: '報表與檔案', items: [
-    ['SYS_REPORT', '報表定義'], ['SYS_DOCFILES', 'Word 報表定義'],
-    ['SYS_XLSFILES', 'Excel 報表定義'], ['SYS_TRSFILES', '交易回寫定義'],
-  ]},
-  { title: '日誌與監控', items: [
-    ['SYSEEPLOG', '系統操作日誌'], ['SYSSQLLOG', 'SQL 執行日誌'],
-    ['SYSERRLOG', '系統錯誤日誌'], ['SYS_GPTLOG', 'GPT AI 使用日誌'],
-  ]},
-  { title: '訊息與通知', items: [
-    ['SYS_MESSENGER', '訊息傳遞'], ['SYS_NOTIFY', '系統公告'], ['SYS_NOTIFY_DETAIL', '公告接收者明細'],
-  ]},
-  { title: '排程任務', items: [
-    ['SYS_SCHEDULE', '排程任務定義'], ['SYS_SCHEDULE_LOG', '排程執行日誌'],
-  ]},
-  { title: '其他', items: [
-    ['SYS_URL_LIST', '短網址對應'], ['SYS_URL_LIST2', '短網址快取'],
-  ]},
-  { title: '舊版遺留（未使用）', items: [
-    ['MENUTABLELOG', '選單日誌'], ['SYS_ANYQUERY', '任意查詢'], ['SYS_TODOHIS', '待辦歷史'],
-    ['SYS_TODOLIST', '待辦清單'], ['SYS_FLDEFINITION', '流程定義'], ['SYS_FLINSTANCESTATE', '流程實例狀態'],
-    ['SYS_EXTAPPROVE', '外部簽核'], ['SYS_SSO_SOLUTION', 'SSO 方案'], ['SYS_INFOPAY', '金流閘道'],
+  { title: '核心類別', open: false, items: [
+    ['Activity', '活動基底類別'], ['Enum', '列舉定義'],
   ]},
 ];
 marked.setOptions({ highlight: function(code, lang) { if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value; return hljs.highlightAuto(code).value; } });
 function buildSidebar() {
   const nav = document.getElementById('sidebar-nav'); let html = '';
-  GROUPS.forEach((g, i) => { const open = i < 6 ? 'open' : '';
-    html += `<div class="nav-group ${open}"><div class="nav-group-title" onclick="this.parentElement.classList.toggle('open')">${g.title}</div><div class="nav-group-items">`;
-    g.items.forEach(([name, desc]) => { html += `<a class="nav-item" data-name="${name}" href="#${name}" onclick="loadPage('${name}')"><span class="table-name">${name}</span> <span class="table-desc">${desc}</span></a>`; });
-    html += '</div></div>'; }); nav.innerHTML = html;
+  GROUPS.forEach((g) => {
+    const cls = g.open ? 'open' : '';
+    html += `<div class="nav-group ${cls}"><div class="nav-group-title" onclick="this.parentElement.classList.toggle('open')">${g.title}</div><div class="nav-group-items">`;
+    g.items.forEach(([name, desc]) => {
+      html += `<a class="nav-item" data-name="${name}" href="#${name}" onclick="event.preventDefault();loadPage('${name}')"><span class="table-name">${name}</span> <span class="table-desc">${desc}</span></a>`;
+    });
+    html += '</div></div>';
+  });
+  nav.innerHTML = html;
 }
 async function loadPage(name) {
   const content = document.getElementById('md-content');
   content.innerHTML = '<div class="loading">載入中...</div>';
   try {
-    const res = await fetch(`${MD_DIR}${name}.md`); if (!res.ok) throw new Error(`${res.status}`);
-    const md = await res.text(); content.innerHTML = marked.parse(md);
+    const res = await fetch(`${MD_DIR}${name}.md`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const md = await res.text();
+    content.innerHTML = marked.parse(md);
     content.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
-    content.querySelectorAll('a[href]').forEach(a => { const href = a.getAttribute('href'); const match = href.match(/^\.?\/?([A-Z][A-Z0-9_]+)\.md$/); if (match) { a.href = `#${match[1]}`; a.onclick = (e) => { e.preventDefault(); loadPage(match[1]); }; } });
+    content.querySelectorAll('a[href]').forEach(a => {
+      const href = a.getAttribute('href');
+      const match = href.match(/^\.?\/?([A-Za-z][A-Za-z0-9_]+)\.md$/);
+      if (match) { a.href = `#${match[1]}`; a.onclick = (e) => { e.preventDefault(); loadPage(match[1]); }; }
+    });
     buildTOC();
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    const active = document.querySelector(`.nav-item[data-name="${name}"]`); if (active) { active.classList.add('active'); active.scrollIntoView({ block: 'nearest' }); }
-    document.getElementById('content').scrollTop = 0; history.replaceState(null, '', `#${name}`);
-    document.title = `${name} — EEP Core 系統資料表`; document.getElementById('sidebar').classList.remove('show');
+    const active = document.querySelector(`.nav-item[data-name="${name}"]`);
+    if (active) { active.classList.add('active'); active.scrollIntoView({ block: 'nearest' }); }
+    document.getElementById('content').scrollTop = 0;
+    history.replaceState(null, '', `#${name}`);
+    document.title = `${name} — EEP Core 流程活動元件`;
+    document.getElementById('sidebar').classList.remove('show');
   } catch (e) { content.innerHTML = `<p>無法載入 ${MD_DIR}${name}.md：${e.message}</p>`; }
 }
 function buildTOC() {
-  const headings = document.querySelectorAll('#md-content h2, #md-content h3'); const links = document.getElementById('toc-links'); let html = '';
-  headings.forEach(h => { const id = h.id || h.textContent.trim().replace(/\s+/g, '-').toLowerCase(); h.id = id; const cls = h.tagName === 'H3' ? 'h3' : '';
-    html += `<a class="${cls}" href="javascript:void(0)" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth'})">${h.textContent}</a>`; }); links.innerHTML = html;
+  const headings = document.querySelectorAll('#md-content h2, #md-content h3');
+  const links = document.getElementById('toc-links'); let html = '';
+  headings.forEach(h => {
+    const id = h.id || h.textContent.trim().replace(/\s+/g, '-').toLowerCase(); h.id = id;
+    const cls = h.tagName === 'H3' ? 'h3' : '';
+    html += `<a class="${cls}" href="javascript:void(0)" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth'})">${h.textContent}</a>`;
+  });
+  links.innerHTML = html;
 }
 document.getElementById('search-box').addEventListener('input', function() {
-  const q = this.value.toLowerCase(); document.querySelectorAll('.nav-item').forEach(el => { const name = el.dataset.name.toLowerCase(); const desc = el.querySelector('.table-desc').textContent.toLowerCase(); el.classList.toggle('hidden', q && !name.includes(q) && !desc.includes(q)); });
-  document.querySelectorAll('.nav-group').forEach(g => { const hasVisible = g.querySelector('.nav-item:not(.hidden)'); g.style.display = hasVisible ? '' : 'none'; if (q) g.classList.add('open'); });
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('.nav-item').forEach(el => {
+    const name = el.dataset.name.toLowerCase();
+    const desc = el.querySelector('.table-desc').textContent.toLowerCase();
+    el.classList.toggle('hidden', q && !name.includes(q) && !desc.includes(q));
+  });
+  document.querySelectorAll('.nav-group').forEach(g => {
+    const hasVisible = g.querySelector('.nav-item:not(.hidden)');
+    g.style.display = hasVisible ? '' : 'none';
+    if (q) g.classList.add('open');
+  });
 });
-buildSidebar(); const hash = location.hash.replace('#', '') || 'index'; loadPage(hash);
+buildSidebar();
+const hash = location.hash.replace('#', '') || '流程活動元件列表';
+loadPage(hash);
 window.addEventListener('hashchange', () => { const name = location.hash.replace('#', ''); if (name) loadPage(name); });
 </script>
 </body>
