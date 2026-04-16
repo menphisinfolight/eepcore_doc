@@ -40,6 +40,7 @@ AutoNumber 在資料新增時自動產生不重複的流水號編號。搭配 [S
 | **startValue** | long | 數字框 `[NumberboxEditor]` | 1 | 流水號起始值 |
 | **step** | int | 數字框 `[NumberboxEditor]` | 1 | 遞增步進 |
 | **numDig** | int | 數字框 `[NumberboxEditor]` | 3 | 流水號位數（不足補零） |
+| **readOnly** | bool | 勾選 | false | 防止使用者手動編輯自動編號欄位 |
 | **onGetFixed** | string | 事件編輯器 `[EventEditor]` | — | 自訂前綴事件 |
 
 ## GetFixed 前綴格式
