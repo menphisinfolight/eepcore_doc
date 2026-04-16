@@ -6,7 +6,7 @@
 
 SYSERRLOG 記錄系統發生的錯誤，包含錯誤訊息、堆疊追蹤、畫面截圖、處理狀態等。支援錯誤追蹤生命週期：從發現到處理完成。
 
-> ⚠️ **C# 程式碼無直接引用**：此表在 SQL 建表腳本中有完整定義，但 EEPCore SP7 的 C# 程式碼中未找到 INSERT 或操作此表的邏輯。推測由系統底層（如全域例外處理中間件）或管理介面透過 DataModule 通用框架操作。
+> ⚠️ **舊版遺留，未使用**：此表在 SQL 建表腳本中有定義，但 EEPCore SP7 的 C#、JavaScript、JSON 程式碼均無任何引用（僅在系統表列表 `jquery.infolight.table.system.json` 中出現）。無對應的 infocommand、無 Provider、無前端操作。
 
 ### 預期使用場景
 
