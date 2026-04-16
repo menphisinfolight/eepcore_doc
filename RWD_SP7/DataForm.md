@@ -271,6 +271,192 @@ if (status === 'insert') {
 return title;
 ```
 
+## 前端行為（JavaScript）
+
+> 原始碼位置：`bootstrap.infolight.js` — `$.fn.form = $.createObj('form', { ... })` (約 line 6345-8082)
+
+### 初始化（init）
+
+`init` 方法在元件建立時執行，負責以下工作：
+
+1. **解析選項**：讀取 DOM 上的 `data-options` 屬性（`$.parseOptions`），存入 `jq.data('form').options`。
+2. **Fuzzy 模式處理**：若 `mode == 'fuzzy'`，掃描所有查詢欄位的 `title`，組合成 placeholder 文字顯示於搜尋框。
+3. **工具列按鈕本地化**：遍歷 `div.dataform-toolitem .btn`，將按鈕文字轉為 `$.fn.locale` 對應語系（`delete` → `remove`、`export` → `exports` 等特殊映射）。
+4. **Fieldset 摺疊**：為每個 `<legend>` 前置一個 `glyphicon-minus` 圖示，點擊可收合/展開所屬的 `<form>` 區塊（`slideUp` / `slideDown`）。
+5. **綁定事件**：呼叫 `bindEvent` 註冊所有交互事件。
+6. **Panel 模式自動載入**：當 `mode == 'panel'` 且無關聯的 ViewObj 時，設定 `pagination = true` 並呼叫 `reload(1)` 載入第一頁資料。若有 drill-down 參數（`targetRemoteName`），則改用 `whereItems` 過濾。
+7. **流程整合**：若 `isShowFlowIcon` 為 true，隱藏 submit/reload 按鈕，並依流程狀態（`isOpen` / `isPrepare`）呼叫對應的 `$.fn.flow` 方法。
+8. **ChatUX 整合**：解析 URL 中的 `c=` 參數，從 `sessionStorage` 取得聊天指令（新增/更改/刪除/印表），自動設定 `loadAction` 和 `whereItems`。
+
+### 事件綁定（bindEvent）
+
+`bindEvent` 註冊以下互動行為：
+
+| 綁定對象 | 事件 | 行為 |
+|----------|------|------|
+| `.form-submit` / `.form-close` / `.form-query` / `.form-clear` | click | 呼叫對應的 `form('submit')` / `form('close')` / `form('query')` / `form('clear')` 方法；clear 同時載入預設值 |
+| `div.dataform-toolitem li`（分頁） | click | 依 `value`（first/previous/next/last/數字）計算頁碼，呼叫 `reload(page)` |
+| `div.dataform-toolitem .btn`（工具列按鈕） | click | 讀取按鈕的 `onclick` 選項，若為已註冊方法則呼叫 `form(method)`，否則以 `$.callFunction` 執行自訂函式 |
+| `.form-control[name]` | change | 觸發 `$.triggerValueChanged(control, name)` 通知 ValueChanged 事件 |
+| `.form-control[name]`（validateStyle == 'timely'） | blur | 即時驗證：檢查 required 及 validType，錯誤時加上 `has-error` class 並顯示紅色錯誤訊息 |
+| `shown.bs.modal` | modal shown | 計算 `modal-body` 的 `max-height`（視窗高度扣除 header/footer/margin），設定 `overflow-y` 捲動 |
+| `hide.bs.modal` | modal hide | 若 `closeProtect` 啟用且狀態非 view，彈出確認對話框；使用者確認後設定 `forceClose` flag 才真正關閉 |
+| `hidden.bs.modal` | modal hidden | 清除 `forceClose` flag，呼叫 `removeLock` 釋放記錄鎖定；若為流程開啟模式則關閉當前頁籤 |
+
+### 資料載入（reload / loadRow / loadDetail）
+
+**reload(page)**：
+
+1. 顯示 loading 遮罩。
+2. 透過 `$.loadData(remoteName, { rows: 1, page, whereStr, whereItems })` 向後端取得單筆資料。
+3. 呼叫 `loadRow(row)` 填入表單、`loadDetail(row)` 載入明細 Grid、`status('view')` 設為檢視模式。
+4. 隱藏 footer 按鈕，重新渲染分頁控制列（`refreshPagination`）。
+5. 若有 `loadAction`（如 ChatUX 觸發的 `edit_row`），自動執行該動作。
+6. 觸發 `onLoad(row)` 事件。
+
+**loadRow(row)**：遍歷所有 `.form-control`，以 `name` 為 key 從 `row` 取值呼叫 `setValue()`。另處理 `creator`/`updater` 日期欄位及 `daterange` 元件的特殊初始化。
+
+**loadDetail(data)**：取得所有 `parentObject` 指向本表單的明細 DataGrid，呼叫其 `datagrid('init', detailOptions)` 重新載入明細資料。`detailOptions` 包含 `parentTable`、`parentRow`、`onLoadDetail` 等。
+
+### 清除（clear）
+
+清空表單所有 `input` 和 `select` 的值。radio/checkbox 則取消勾選。`options-div` 內的 select 以 `prop('checked', false)` 處理。
+
+### 開啟表單（open）
+
+依 `mode` 決定開啟方式：
+
+- **Tab 模式**：將表單資料序列化至 `sessionStorage`，透過 `window.top.addTab(mid, title, url)` 在主框架開啟新頁籤。頁籤 id 以 key 值的 MD5 產生，確保同筆資料不重複開啟。支援 `onShowTitle` 動態修改頁籤標題。
+- **Dialog/Panel 模式**：呼叫 `$.checkSession` 確認 session 有效後，依序執行 `loadRow` → `loadDetail` → `status(data.status)` → `modal('show')`。觸發 `onShowTitle`、`onLoad`、`onFlowLoad` 事件。
+
+### 送出（submit）
+
+完整的送出流程：
+
+```
+submit()
+  ├─ 若 status == 'view' → 直接關閉 Modal，不送出
+  ├─ 呼叫 onApply 事件 → 回傳 false 可中斷
+  ├─ 等待所有 fileupload 元件完成上傳（$.when）
+  ├─ validate() 表單驗證
+  ├─ 明細 Grid 驗證（endEdit + validate）
+  ├─ 組裝 datas 陣列：
+  │   ├─ 主表 { table, inserted:[], updated:[], deleted:[] }
+  │   └─ 明細 Grid 的 getChangedDatas()
+  ├─ autoApply == false 時：
+  │   └─ 僅更新前端 ViewGrid 的 row，不送後端
+  ├─ autoApply == true 時：
+  │   ├─ $.updateData(remoteName, datas, duplicateCheck, ...)
+  │   ├─ 成功：更新 ViewGrid、acceptChanges、removeLock、reloadViewObj、
+  │   │        status('view')、觸發 onApplied / onFlowApplied
+  │   └─ 失敗：duplicate 錯誤顯示重複提示、其他錯誤觸發 onApplyError / onFlowError
+  └─ complete：重設 submit 按鈕狀態
+```
+
+### 驗證流程（validate）
+
+1. 先呼叫 `resetValidate()` 清除先前的錯誤樣式。
+2. 遍歷所有 `.form-control[name]`：
+   - 先做 **XSS 驗證**（`$.xssValidate`）。
+   - 再檢查 **required**：值為空且 `required:true` 時產生「必填」錯誤。
+   - 再執行 **validType** 驗證（`$.validate(validType, value, field, jq)`）。
+   - 錯誤時加上 `has-error` class。
+3. 依 `validateStyle` 顯示錯誤：
+   - `dialog`：以 `$.alert` 彈出所有錯誤訊息。
+   - `hint`：在 `modal-body` / `panel-body` 前方插入 `alert-danger` 橫幅。
+   - `timely`：在欄位下方即時顯示紅色錯誤文字（於 blur 事件中處理）。
+
+### 欄位狀態控制（status）
+
+`status(value)` 方法同時扮演 getter 和 setter。設定狀態時：
+
+| 狀態 | 欄位行為 | 工具列按鈕 | 明細 Grid |
+|------|----------|------------|-----------|
+| `view` | 所有欄位 `setReadonly(true)`；required 標記移除紅色 | 顯示 Add/Edit/Delete 等操作按鈕，隱藏 Save/Cancel | `datagrid('readonly', true)` |
+| `inserted` | 依各欄位原始 `readonly` 設定還原；`creator` 元件自動填入日期；`refval` 元件若有 `columnMatchs` 則觸發 blur | 顯示 Save/Cancel，隱藏其他 | `datagrid('readonly', false)` |
+| `updated` | **Key 欄位**強制 `setReadonly(true)`，其餘依原始設定還原 | 顯示 Save/Cancel，隱藏其他 | `datagrid('readonly', false)` |
+
+非 view 狀態下，`required:true` 的欄位標題加上 `text-danger` 紅色樣式。
+
+切換狀態時也會重新載入含有 `row` 參數的 `combobox`（動態篩選下拉選項）。
+
+### 工具列動作（ToolItem Actions）
+
+| 方法 | 行為 |
+|------|------|
+| `insert_row` | 取得預設值（`getDefaultValues`），載入空白列，狀態設為 `inserted`，重設明細 Grid |
+| `edit_row` | 取得目前表單資料列，狀態設為 `updated`；觸發 `onFlowUpdate` 事件 |
+| `delete_row` | 觸發 `onDelete` + `onFlowDelete` 事件（可取消）→ 確認對話框 → `$.updateData` 送出刪除 → `reload` 重新載入 → `reloadViewObj` 刷新關聯元件 → 觸發 `onApplied` |
+| `submit` | 見上方「送出」流程 |
+| `reload` | 等同 `cancel`，呼叫 `reload()` 重新載入當前頁 |
+| `close` | Panel 模式呼叫 `window.top.closeCurrentTab()`；Dialog 模式呼叫 `modal('hide')`；觸發 `onCancel` |
+| `exportWord` / `exportWordPdf` / `exportWordExcel` | 收集表單資料，透過 `$.exportFile('word', ...)` 產生 Word/PDF/Excel 匯出檔案 |
+
+### 查詢（query）
+
+1. 遍歷查詢表單的所有 `.form-control`，組裝 `whereItems` 陣列（每個項目含 field、operator、value、dataType 等）。
+2. Fuzzy 模式下所有條件加上 `or: true`。
+3. 將 whereItems 傳送至關聯的 DataGrid（`setWhere`）、ReportViewer、PivotTable、Gantt、各類 Chart。
+4. 若查詢面板為 Dialog 模式，查詢後自動關閉 Modal。
+
+### 分頁（refreshPagination）
+
+Panel 模式下每次 `reload` 後更新分頁列。資料筆數為 0 時隱藏 Edit/Delete 按鈕。分頁採前後各顯示 1 頁的滑動窗口演算法，含「首頁 / 上一頁 / 下一頁 / 末頁」按鈕。
+
+### 流程整合（Workflow / Flow）
+
+DataForm 透過 `isShowFlowIcon` 選項與 `$.fn.flow` 模組整合：
+
+- **init 時**：呼叫 `$.fn.flow.showFlowIcons(target)` 顯示流程圖示按鈕；隱藏原生的 submit/reload 按鈕。
+- **flowOpened**：流程已開啟（簽核中）時進入 flowOpened 模式。
+- **flowPrepare**：流程待送簽時顯示流程操作按鈕。
+- **submit 時**：觸發 `onFlowApply` → 送出成功後觸發 `onFlowApplied`；失敗時觸發 `onFlowError`。
+- **hidden.bs.modal**：流程開啟模式下，Dialog 關閉後自動呼叫 `window.top.closeCurrentTab()` 關閉頁籤。
+- **事件攔截**：`insert_row` 和 `edit_row` 會先觸發 `onFlowUpdate`，`delete_row` 會先觸發 `onFlowDelete`，回傳 false 可取消操作。
+
+### 記錄鎖定（Record Lock）
+
+`removeLock(row)` 方法在 Modal 關閉（`hidden.bs.modal`）及送出成功後呼叫。若關聯的 ViewGrid 啟用 `recordLock`，透過 `$.removeLock(remoteName, keys, [row])` 釋放伺服器端的記錄鎖。
+
+### 公開 API 方法一覽
+
+| 方法 | 參數 | 回傳 | 說明 |
+|------|------|------|------|
+| `options()` | — | Object | 取得元件選項 |
+| `init(options)` | options | jq | 初始化 |
+| `initQuery()` | — | jq | 初始化查詢面板（設定預設值、readonly、Enter 鍵攔截） |
+| `reload(page)` | page: number | jq | 載入指定頁資料 |
+| `open(data)` | { row, keys, status, parentRow, onLoadDetail } | jq | 開啟表單（Dialog/Tab） |
+| `clear()` | — | jq | 清空所有欄位值 |
+| `loadRow(row)` | row: Object | jq | 將 row 資料填入表單 |
+| `loadDetail(data)` | { row, parentRow, onLoadDetail } | jq | 載入明細 Grid |
+| `status(value)` | value?: string | jq \| string | 設定/取得狀態（view/inserted/updated） |
+| `getRow(excludeTypes)` | excludeTypes?: array | Object | 從表單收集目前資料列 |
+| `getDefaultValues(values)` | values?: Object | Object | 取得欄位預設值（含 Default 元件、carryOn、ChatUX） |
+| `insert_row()` | — | jq | 新增記錄 |
+| `edit_row()` | — | jq | 編輯目前記錄 |
+| `delete_row()` | — | jq | 刪除目前記錄 |
+| `submit()` | — | jq | 送出（儲存） |
+| `cancel()` | — | jq | 取消（等同 reload） |
+| `close()` | — | jq | 關閉表單 |
+| `validate()` | — | bool | 執行驗證，回傳是否通過 |
+| `resetValidate()` | — | jq | 清除驗證錯誤樣式 |
+| `readonly(value)` | value: bool | jq | 隱藏/顯示 Modal 的 close 和 footer 按鈕 |
+| `query()` | — | jq | 執行查詢，將條件傳至關聯元件 |
+| `openQuery()` | — | jq | 開啟查詢面板 Dialog |
+| `setWhere(where)` | where: Array \| string | jq | 設定篩選條件並 reload |
+| `getViewObj()` | — | jq | 取得關聯的檢視元件（DataGrid/DataList/Schedule/Tree/Orgchart） |
+| `getViewGrid()` | — | jq | 取得關聯的 DataGrid（editForm 指向本表單者） |
+| `getDetailGrid(recursive)` | recursive?: bool | jq | 取得明細 Grid（parentObject 指向本表單者） |
+| `reloadViewObj()` | — | jq | 重新載入所有關聯的檢視元件 |
+| `refreshPagination(total)` | total: number | jq | 更新分頁控制列 |
+| `exportWord(fileType)` | fileType?: string | jq | 匯出 Word |
+| `exportWordPdf()` | — | jq | 匯出 PDF |
+| `exportWordExcel(name)` | name?: string | jq | 匯出 Excel |
+| `removeLock(row)` | row?: Object | jq | 釋放記錄鎖定 |
+| `refreshTabGrid()` | — | jq | Tab 模式下透過 postMessage 通知主頁籤重新載入 Grid |
+| `onEvent(param)` | { events, parameters } | bool | 依序觸發指定事件，任一回傳 false 則中斷 |
+
 ## 備註
 
 - DataForm 的 `Mode` 決定渲染方式：`Dialog` 和 `Tab` 渲染為 Bootstrap Modal，`Panel` 渲染為可摺疊的 Panel。

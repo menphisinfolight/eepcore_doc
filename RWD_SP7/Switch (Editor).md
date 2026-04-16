@@ -19,6 +19,26 @@
 | **style** | string | 下拉選項 `[ItemsEditor]` | "button" | 樣式（button / checkbox） |
 | **onSelect** | string | 事件編輯器 `[ScriptEditor(value)]` | — | 切換事件 |
 
+## 前端行為（JavaScript）
+
+> 原始碼：`bootstrap.infolight.js` 第 12632–12754 行
+
+### 公開方法
+
+| 方法 | 說明 |
+|------|------|
+| `getValue()` | 依開關狀態回傳 `onValue` 或 `offValue` |
+| `setValue(value)` | 比對 `onValue` 決定開啟或關閉；checkbox 模式用 `prop('checked')`，button 模式用 `lcs_on()`/`lcs_off()` |
+| `readonly(bool)` | checkbox 模式設定 `disabled`；button 模式切換 `lcs_disabled` CSS 類別 |
+| `options()` | 取得初始化選項 |
+
+### 關鍵行為
+
+- **雙模式渲染**：`style` 為 `checkbox` 時直接使用原生 checkbox（寬高 25px）；否則使用 `lc_switch` 外掛渲染滑動開關。
+- **自動計算寬度**：button 模式下依 `onText`/`offText` 文字長度自動計算開關寬度，英文字元以 `長度/2.7` 折算。
+- **label 解綁**：初始化時移除對應 `<label>` 的 `for` 屬性，避免點擊 label 觸發非預期行為。
+- **事件觸發**：點擊後延遲 100ms 觸發 `onSelect` 回呼及 `$.triggerValueChanged()`。
+
 ## 備註
 
 - 渲染為 `<input type="checkbox">` 加上 `bootstrap-switch` CSS 類別。

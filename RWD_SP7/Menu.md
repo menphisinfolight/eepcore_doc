@@ -70,6 +70,39 @@
 | **url** | string | 選單連結 `[MenuEditor]` | 連結目標（Panel） |
 | **onClick** | string | 文字 | 點擊事件函式 |
 
+## 前端行為（JavaScript）
+
+> jQuery Plugin：`$.fn.menu`（`bootstrap.infolight.js` 第 18410–18525 行）
+
+### 初始化流程
+
+1. 解析 `data-options`，呼叫 `createMenu` 依 `items` 建立導覽列 `<li>` 項目。
+2. 有 `subItems` 的項目建立為 Bootstrap Dropdown（`<li class="dropdown">`），並啟用 `dropdownHover()` 實現滑鼠懸停展開。
+3. 項目依 `alignment` 屬性分配到 `.navbar-left` 或 `.navbar-right`。
+4. 若 `refreshPage` 為 true，自動從 URL 參數 `m` 取得當前選單 ID 並標記為 active。
+
+### 主要方法
+
+| 方法 | 說明 |
+|------|------|
+| `createMenu()` | 根據 `items` 陣列建立選單 DOM。支援 `onRenderItem` 自訂項目 HTML。 |
+| `getMenuItem(name)` | 依 `caption` 或 `url` 尋找選單項目，回傳 `<li>` DOM 元素。 |
+| `active(menuItem)` | 啟動指定項目：移除舊 active、加入新 active。若項目有 `onClick` 則呼叫之；若有 `url` 且設定 `bindingObject`，依 `refreshPage` 決定重新導頁（修改 URL 的 `?m=` 參數）或透過 `$.loadHtml` 載入內容至綁定的 Panel。 |
+
+### 頁面導航邏輯
+
+- **`refreshPage = true`**：點擊項目後以 `window.location.href` 帶入 `?m=<url>` 參數重新整理頁面。若有 `#router_iframe` 則操作 `window.top`。
+- **`refreshPage = false`**：透過 `$.loadHtml('#' + bindingObject, url)` 以 AJAX 動態載入內容至指定 Panel，不重整頁面。
+- 點擊 `.navbar-brand`（Logo）時導回原始頁面（移除查詢字串）。
+
+### 事件回呼
+
+| 回呼 | 觸發時機 |
+|------|----------|
+| `onRenderItem(item)` | 渲染每個項目時呼叫，可自訂項目 HTML |
+| `onLoadSuccess` | `$.loadHtml` 載入成功時觸發 |
+| `onLoadError(err, url)` | `$.loadHtml` 載入失敗時觸發 |
+
 ## 備註
 
 - MenuCls 為空時預設使用 `navbar-default`；可改為 `navbar-inverse` 等 Bootstrap 導覽列樣式。

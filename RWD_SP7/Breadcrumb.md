@@ -43,6 +43,22 @@
 | **url** | string | 選單連結 `[MenuEditor]` | 連結目標（Panel） |
 | **bindingObject** | string | 元件選擇器 `[ControlEditor]`（panel） | 綁定的 Panel 元件 |
 
+## 前端行為（JavaScript）
+
+> jQuery Plugin：`$.fn.breadcrumb`（`bootstrap.infolight.js` 第 18527–18608 行）
+
+### 初始化流程
+
+1. 呼叫 `createBreadCrumb` 根據 `items` 建立 `<li class="breadItem">` 項目（有 `url` 的項目包裹 `<a>`，無 `url` 的為純文字）。
+2. 綁定 `<li>` 的 `click` 事件呼叫 `active`。
+
+### 主要方法
+
+| 方法 | 說明 |
+|------|------|
+| `getbreadItem(name)` | 依 `caption` 尋找項目 DOM。 |
+| `active(breadItem)` | 移除舊 active，啟動指定項目：若項目有 `bindingObject`，透過 `$.loadHtml` 載入內容至該 Panel；否則直接 `window.location.href` 導頁。 |
+
 ## 備註
 
 - 項目間分隔符號為 ` > `，透過內嵌 `<style>` 定義 `.breadcrumb > li + li:before` 樣式。

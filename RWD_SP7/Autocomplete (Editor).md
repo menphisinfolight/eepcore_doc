@@ -15,6 +15,26 @@
 | **textField** | string | 欄位選擇器 `[ColumnEditor]` | — | 顯示文字欄位 |
 | **whereItems** | List\<WhereItem\> | 集合編輯器 `[CollectionEditor]` | [] | 查詢條件（共用 Refval.WhereItem） |
 
+## 前端行為（JavaScript）
+
+> 原始碼：`bootstrap.infolight.js` 第 10551–10620 行
+
+### 公開方法
+
+| 方法 | 說明 |
+|------|------|
+| `getValue()` | 直接回傳 `$(jq).val()` |
+| `setValue(value)` | 直接設定 `$(jq).val(value)` |
+| `readonly(bool)` | 設定 `disabled` 屬性 |
+| `getWhereItems()` | 組合查詢條件，支援從 datagrid 列或 form 列取得動態值 |
+| `options()` | 取得初始化選項 |
+
+### 關鍵行為
+
+- **typeahead 整合**：初始化時呼叫 `target.typeahead()`，container 為 `body`。
+- **遠端資料快取**：首次查詢透過 `$.loadData(remoteName, ...)` 取得建議清單，結果存入 `target.data('values')` 快取，後續輸入直接使用快取資料。
+- **whereItems 動態條件**：查詢時可依 `whereItems` 設定的欄位和運算子組合過濾條件，值透過 `$.getDefaultValue()` 解析（支援表單/datagrid 當前列參照）。
+
 ## 備註
 
 - 渲染為 `<input>` 加上 `bootstrap-autocomplete` CSS 類別。

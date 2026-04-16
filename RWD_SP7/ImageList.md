@@ -52,6 +52,52 @@
 | **caption** | string | 文字 | 圖片標題 |
 | **url** | bool | 選單連結 `[MenuEditor]` | 點擊連結目標 |
 
+## 前端行為（JavaScript）
+
+> 原始碼位置：`bootstrap.infolight.js` 第 8478–8702 行
+> jQuery 外掛名稱：`$.fn.imagelist`
+
+### 初始化流程
+
+1. 解析 `data-options`，先呼叫 `bindEvent` 綁定分頁事件，再呼叫 `load` 載入資料。
+
+### 資料載入（load）
+
+- **遠端模式**（`remoteName` 有值）：設定 `imageUrl = '../file'`，先以 `fadeOut(500)` 淡出，再透過 `$.loadData()` 查詢（傳入 `rows`=pageSize、`page`、`whereStr`、`whereItems`、`total:true`），回傳後呼叫 `loadData` 渲染並以 `fadeIn(500)` 淡入。
+- **靜態模式**（`images` 有值）：設定 `imageUrl = '../file/images'`，欄位名稱固定為 `src`、`caption`、`url`，`pagination` 強制為 false。
+
+### 渲染邏輯（loadData）
+
+1. 清空容器內容，依據 `horizontalColumnsCount` 計算 Bootstrap 欄位 class（`col-sm-{12/count}`）。
+2. 欄數上限為 6；若設定 5 則自動調整為 4。
+3. 每 `horizontalColumnsCount` 筆圖片包裹為一個 `<div class="row">`。
+4. 每筆圖片渲染 `<div class="image-box {style}">` 內含 `<img class="img-responsive image-item">`。
+5. 若有 `captionField` 或 `textFormatter`，在圖片下方顯示文字。`textFormatter` 為自訂函式，接收 `row` 參數。
+6. 所有文字輸出皆經過 `$.validateScript()` 防止 XSS。
+
+### 點擊行為
+
+- **圖片區塊（`.image-box`）點擊**：若有 `urlField`，http(s) 開頭的連結以新分頁開啟，否則載入至 `bindingObject` 指定的 Panel。
+- **圖片/文字（`.image-item`, `.image-text`）點擊**：若有 `onClick` 回呼，傳入對應的 `row` 資料物件。
+
+### 分頁控制（refreshPagination）
+
+- 當 `pagination` 為 true 時，動態產生分頁 UI（`<ul class="pagination">`），包含：重新整理、首頁、上一頁、頁碼（前後各 2 頁）、下一頁、末頁。
+- 當前頁碼標記 `active`，首尾頁時停用前/後按鈕（`disabled`）。
+- 若有 `$.fn.locale.pageCount`，顯示總頁數資訊。
+
+### 方法
+
+| 方法 | 說明 |
+|------|------|
+| `options` | 取得元件設定 |
+| `init` | 初始化、綁定事件、載入資料 |
+| `bindEvent` | 綁定分頁按鈕點擊事件 |
+| `load` | 載入資料（支援 `page` 參數指定頁碼） |
+| `loadData` | 接收資料物件，渲染圖片網格與分頁 |
+| `refreshPagination` | 根據 total 重新產生分頁控制列 |
+| `setWhere` | 設定查詢條件（`whereStr`），重新載入 |
+
 ## 備註
 
 - ContainerCls 標記為 `[DataOption(false)]`，不輸出到 data-options，而是用於伺服端渲染的外層容器 CSS 類別。

@@ -46,6 +46,47 @@
 | **caption** | string | 文字 | 圖片標題 |
 | **url** | bool | 選單連結 `[MenuEditor]` | 點擊連結目標 |
 
+## 前端行為（JavaScript）
+
+> 原始碼位置：`bootstrap.infolight.js` 第 8389–8476 行
+> jQuery 外掛名稱：`$.fn.carousels`
+
+### 初始化流程
+
+1. 解析 `data-options`，立即呼叫 `load` 方法載入資料。
+
+### 資料載入（load）
+
+- **遠端模式**（`remoteName` 有值）：設定 `imageUrl = '../file'`，透過 `$.loadData()` 以 `remoteName` 查詢資料（傳入 `rows`=pageSize、`page`=1、`whereItems`），回傳後呼叫 `loadData` 渲染。
+- **靜態模式**（`images` 有值）：設定 `imageUrl = '../file/images'`，欄位名稱固定為 `src`、`caption`、`url`，直接呼叫 `loadData`。
+
+### 渲染邏輯（loadData）
+
+1. 依序為每筆資料建立 `<li>` 指示器（`carousel-indicators`）與 `<div class="item">` 輪播項目。
+2. 圖片 URL 格式：`{imageUrl}?q={imageField}&f={imageFolder}`。
+3. 若有 `captionField`，在圖片下方顯示 `<div class="carousel-caption">`。
+4. 每個 `row` 物件存入 jQuery `.data('row')`，供點擊事件取用。
+
+### 點擊行為
+
+- 點擊輪播項目時：
+  - 若 `urlField` 的值為 `http(s)` 開頭，以 `window.open` 在新分頁開啟。
+  - 若有 `bindingObject`，透過 `$.loadHtml()` 將內容載入指定 Panel。
+  - 若有 `onClick` 回呼，額外觸發。
+
+### 自動播放
+
+初始化完畢後呼叫 `target.carousel({ interval: opts.interval })`，依據 `interval` 設定自動輪播間隔。
+
+### 方法
+
+| 方法 | 說明 |
+|------|------|
+| `options` | 取得元件設定 |
+| `init` | 初始化並載入資料 |
+| `load` | 依資料來源模式載入資料 |
+| `loadData` | 接收資料陣列，渲染輪播項目 |
+
 ## 備註
 
 - 渲染時輸出完整的 Bootstrap Carousel 結構：`carousel-indicators`、`carousel-inner`、左右 `carousel-control`。

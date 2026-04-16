@@ -59,6 +59,67 @@ Validate 用來定義 DataGrid 或 DataForm 中欄位的前端驗證規則。支
 | **Function** | `name`, `message` | —, "Value is not valid." | 自訂驗證函式 |
 | **Unique** | — | — | 唯一值檢查 |
 
+## 前端行為（JavaScript）
+
+Validate 元件本身不產生 HTML 元素，也沒有獨立的 `$.createObj`。驗證規則透過 C# Render 時寫入各欄位 `<label>` 的 `data-options`（`required`、`validType` 屬性），由 datagrid 和 form 的送出流程統一讀取執行。
+
+### 核心機制
+
+**`$.validate(rule, value, field, jq)`**（全域工具函式，約第 695 行）：
+- 以正規式拆分 `validType` 字串，從 `$.fn.validatebox.defaults.rules` 取得對應的驗證器。
+- 若值為空且規則不是 `function` 類型，跳過驗證（空值由 `required` 檢查處理）。
+- `unique` 規則額外傳入 `field` 作為參數。
+- 驗證失敗時回傳格式化的錯誤訊息字串，成功回傳空字串。
+
+**`$.fn.validatebox.defaults.rules`**（約第 14746 行）：
+| 規則 | 驗證邏輯 |
+|------|----------|
+| `email` | 正規式驗證 Email 格式 |
+| `url` | 正規式驗證 URL 格式（允許省略 protocol） |
+| `length` | `value.length` 介於 `param[0]` 至 `param[1]` |
+| `minLength` | `value.length >= param[0]` |
+| `maxLength` | `value.length <= param[0]` |
+| `greater` | `parseFloat(value) >= parseFloat(param[0])`（支援數值與字串比較） |
+| `less` | `parseFloat(value) <= parseFloat(param[0])` |
+| `range` | 數值介於 `param[0]` 至 `param[1]`；`param[0]` 為空時一律通過 |
+| `cid` | 中國大陸身分證字號驗證（15 或 18 碼） |
+| `tid` | 台灣身分證字號驗證（首字母 + 9 碼數字，加權檢查碼） |
+| `uid` | 統一證號驗證（8 碼數字，加權 mod 5） |
+| `function` | 呼叫 `$.callFunction(param[0], value, this)` 執行自訂驗證函式 |
+| `unique` | 檢查同一 datagrid/form 中是否有重複的 key 值 |
+
+### XSS 防護
+
+**`$.xssValidate(value)`**（約第 719 行）：所有驗證流程在檢查 required 和 validType 之前，先以 `/<\s*script\s*>/i` 偵測 XSS，若偵測到直接回傳 `validateXss` 訊息。
+
+### 呼叫時機
+
+1. **DataGrid 結束編輯**（`endEdit` → `validateRow`，約第 4048 / 4205 行）：
+   - `endEdit` 呼叫 `validateRow(editIndex)`，遍歷該列所有 `<td>` 的編輯器。
+   - 依序執行：XSS 檢查 → required 空值檢查 → `$.validate(fieldOpts.validType, value, field, target)`。
+   - 驗證失敗時將 `<td>` 加上 `has-error` CSS 類別，收集錯誤訊息後以 `$.alert` 彈窗顯示。
+   - 任一欄位失敗即中止整列驗證，`endEdit` 回傳 `false`。
+
+2. **Form 送出**（`submit`，約第 7640 行）：
+   - 先呼叫 `form('validate')`（約第 7389 行），遍歷所有 `.form-control` 元素。
+   - 從對應 `<label>` 的 `data-options` 讀取 `required` 和 `validType`。
+   - 驗證失敗的展示方式由 `validateStyle` 控制：
+     - `dialog`：彈出 `$.alert` 對話框顯示所有錯誤。
+     - `hint`：在 `.modal-body` 前插入 `alert-danger` 區塊。
+     - `timely`：在各欄位下方即時顯示 `error-message`。
+   - Form 送出前也會呼叫所有子 datagrid 的 `endEdit` + `validate`（重複值檢查）。
+
+3. **DataGrid 重複值檢查**（`validate(jq, row)`，約第 5048 行）：
+   - 若 `duplicateCheck` 為 `true`，檢查所有列的 key 欄位組合是否重複。
+
+4. **即時驗證**（`validateStyle: 'timely'`，約第 6788 行）：
+   - Form 初始化時綁定 `blur` 事件，欄位失焦即觸發單欄驗證。
+   - 呼叫 `form('resetValidate')` 清除舊錯誤後重新驗證。
+
+### resetValidate
+
+`form('resetValidate')`（約第 7384 行）：移除 `.alert-danger`、`.error-message` 元素，以及所有 `.has-error` CSS 類別。
+
 ## 備註
 
 - `Render()` 方法為空實作，Validate 不產生可見的 HTML 元素，僅提供前端 JavaScript 使用的驗證規則。

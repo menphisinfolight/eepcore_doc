@@ -44,6 +44,38 @@
 
 `top`、`bottom`、`left`、`right`（設計介面預設 `auto`）
 
+## 前端行為（JavaScript）
+
+> 原始碼：`bootstrap.infolight.js` 第 18610–18918 行
+> jQuery 外掛名稱：`$.fn.shoppingcart`
+
+### 公開 API 方法
+
+| 方法 | 參數 | 說明 |
+|------|------|------|
+| `options()` | — | 取得元件選項物件 |
+| `init(options?)` | options | 初始化元件：以 Bootstrap Popover 建立購物車彈出面板。設定 `panelTitle`、`placement`、`trigger`，並套用自訂模板含 `popover-footer` |
+| `bindEvent()` | — | 綁定面板內的互動事件：關閉按鈕、數量加減按鈕 |
+| `load()` | — | 透過 `$.loadData` 載入購物車資料，完成後呼叫 `loadData` 渲染 |
+| `refreshPopover()` | — | 重新渲染 Popover 內容：更新按鈕上的 badge 數量、產生商品清單 HTML（圖片、名稱、價格、數量加減）、呼叫 `onRenderFooter` 渲染頁尾 |
+| `loadData(data)` | data: `{rows, total}` | 儲存資料至 `opts.datas` 並觸發 `refreshPopover` |
+| `submit(callback)` | callback: Function | 將 `updatedRows` / `deletedRows` 透過 `$.updateData` 提交至後端，成功後呼叫 `acceptChanges` 並執行 callback |
+| `add(row, callback?)` | row, callback | 新增商品至購物車。先載入最新資料，以 keys 比對是否已存在：存在則累加數量（updated），不存在則新增（inserted）。觸發 `onQuantityChanged` |
+| `deleteAll(callback?)` | callback | 載入全部購物車資料後以 `$.updateData` 批次刪除所有項目 |
+| `moveTo(remoteName, columnMatchs, callback?)` | remoteName, columnMatchs, callback | 將購物車內容搬移至指定 RemoteName：載入全部資料，依 `columnMatchs` 欄位對應（source→target）轉換後批次新增 |
+| `acceptChanges()` | — | 清空暫存的 `insertedRows` / `updatedRows` / `deletedRows` |
+| `close()` | — | 關閉 Popover 面板 |
+
+### 關鍵前端行為
+
+- **Popover 面板**：購物車以 Bootstrap Popover 實作，自訂模板包含 `popover-title`（含關閉按鈕）、`popover-content`（商品清單）、`popover-footer`（自訂頁尾）。
+- **數量加減**：點擊 +/- 按鈕時立即更新 `row[quantityField]`，觸發 `onQuantityChanged` 後呼叫 `submit` 即時同步至後端。按鈕在請求期間設為 `disabled` 防止重複操作。
+- **數量歸零自動刪除**：按 - 將數量減至 0 以下時，該商品自動轉為 `deletedRows` 並從畫面及資料中移除。
+- **商品圖片**：圖片 URL 為 `../file?q=<imageField>&f=<imageFolder>` 格式，由後端檔案服務提供。
+- **Badge 數量**：每次 `refreshPopover` 會更新觸發按鈕上的 `<span class="badge">` 顯示購物車總數。
+- **priceFormatter**：透過 `opts.priceFormatter.call(target, row)` 自訂價格顯示（如幣別、千分位），未設定時價格區域為空。
+- **onRenderFooter**：可自訂 Popover 底部 HTML（如小計、結帳按鈕），預設為空。
+
 ## 備註
 
 - 渲染為 `<a class="btn bootstrap-shoppingcart">`，顯示 PanelTitle 文字，前端 JS 處理彈出面板邏輯。

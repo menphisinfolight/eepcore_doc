@@ -99,6 +99,32 @@ WhereItem.Value 和 ColumnMatch.SourceValue 支援多種值類型：
 | **Function** | 函式呼叫（Name + Parameter） |
 | **Parent** | 父層表單欄位值 |
 
+## 前端行為（JavaScript）
+
+> 原始碼：`bootstrap.infolight.js` 第 15066–15322 行
+> jQuery 外掛名稱：`$.fn.clientmove`
+
+### 公開 API 方法
+
+| 方法 | 參數 | 說明 |
+|------|------|------|
+| `options()` | — | 取得元件選項物件 |
+| `init(options?)` | options | 初始化元件，解析選項並儲存至 `data('clientmove')` |
+| `refreshChecked(datagrid)` | datagrid: jQuery | 跨分頁維護勾選狀態。將當前頁面的勾選結果合併回 `checkedRows`，以 keys 或 `_index` 識別唯一列 |
+| `addRows(rows)` | rows: Array | 將選取的列搬移至目標 DataGrid。依 `keyFields` 比對重複（`alwaysInsert=true` 時跳過）；取得預設值後套用 `columnMatchs` 欄位對應；可選觸發 `triggerExpression` 表達式計算 |
+| `openMove()` | — | 開啟搬移對話框：建立 Modal + 內嵌 DataGrid（含 checkbox 勾選），按確定後呼叫 `addRows` 搬移勾選列 |
+| `addAll()` | — | 不開啟對話框，直接以 `$.loadData` 載入所有符合條件的來源資料（pageSize=-1），然後呼叫 `addRows` 全部搬移 |
+
+### 關鍵前端行為
+
+- **對話框結構**：`openMove()` 動態建立 Bootstrap Modal，內含一個啟用 `showCheckbox:true` 的 DataGrid，支援分頁及查詢。使用者可跨頁勾選記錄。
+- **跨頁勾選**：`refreshChecked()` 在每次分頁前呼叫（`onBeforeLoad`），將當前頁已勾選的列存入 `datagrid.data('checkedRows')`；載入新頁面後（`onLoad`）還原先前的勾選狀態。
+- **重複檢查**：搬移時以 `keyFields` 陣列比對目標 DataGrid 現有列，若所有 key 欄位值皆相同則視為重複並跳過。
+- **預設值與欄位對應**：新增列先呼叫 `form('getDefaultValues')` 或 `datagrid('getDefaultValues')` 取得預設值，再以 `columnMatchs` 覆寫對應欄位。`sourceValue` 支援 `$.getDefaultValue()` 動態取值。
+- **表達式觸發**：`triggerExpression` 不為 `false` 時，搬入後逐筆進入編輯模式並對每個 `columnMatchs` 目標欄位觸發 `$.triggerValueChanged`，再結束編輯。
+- **autoApply**：搬移期間暫時關閉目標 DataGrid 的 `autoApply`，全部搬入後若原本為啟用狀態，則自動呼叫 `datagrid('submit')` 提交。
+- **WhereItems 動態值**：開啟對話框時 `whereItems` 的 `value` 會透過 `$.getDefaultValue()` 動態解析（支援 Parent、Variable 等值類型）。
+
 ## 備註
 
 - Render 輸出 `<div class="bootstrap-clientmove">`，前端以對話框呈現來源資料供使用者勾選搬移。

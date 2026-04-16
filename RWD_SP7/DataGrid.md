@@ -269,6 +269,274 @@ Render()
 
 表格 CSS 類別依屬性動態組合：`table-bordered`、`table-hover`、`table-striped`、`table-condensed`、`table-xsblock`、`table-simple`。
 
+## 前端行為（JavaScript）
+
+> 原始碼：`EEPWebClient.Core/wwwroot/js/infolight/bootstrap.infolight.js` 第 2308–6258 行
+> jQuery Plugin 名稱：`$.fn.datagrid`，以 `$.createObj('datagrid', { ... })` 建立
+> CSS 選擇器：`.bootstrap-datagrid, .bootstrap-tablegrid`
+
+### 渲染後 HTML 結構
+
+伺服器端 `Render()` 產出的 HTML 骨架經前端 `init` 方法加工後，最終 DOM 結構如下：
+
+```
+div.table-responsive
+  div.datagrid-toolitem              ← 工具列按鈕（Top 位置時在 table 之前）
+  div.table-wrapper                  ← 當 height 有設定時包裹，overflow:auto
+    table.bootstrap-datagrid         ← 主表格，id 對應元件 ID
+      thead > tr
+        th.command                   ← 行指令欄（view/edit/delete 按鈕）
+        th.rowcheck                  ← showCheckbox 時加入全選 checkbox
+        th.rownumber                 ← rownumbers 時加入列號欄
+        th[data-field]               ← 各資料欄位，含 sort-btn、popover 隱藏按鈕等
+        tr.autoquerytr               ← autoQueryColumn 時動態插入的快速查詢列
+      tbody
+        tr.dataRow                   ← 每筆資料一組 tr（trLength > 1 時多列一組）
+          td.datagrid-rownumber      ← 列號
+          td.datagrid-checkbox       ← 勾選框
+          td.datagrid-command        ← 行指令按鈕（pencil/remove/eye-open/showCommand）
+          td[data-field]             ← 資料儲存格
+            b.table-cell-label       ← RWD xs 斷點時顯示的欄位標題
+            div.table-cell-text      ← 實際值或編輯器容器
+      tfoot                          ← 合計列（由 reloadFooter 動態建立）
+  div.datagrid-toolitem              ← 工具列按鈕（Bottom 位置時在 table 之後）
+div.clearfix
+  ul.pagination                      ← 分頁按鈕列
+  div.pageTo                         ← pageJump 時的跳頁輸入框
+  div.pageList                       ← pageList 時的每頁筆數下拉選單
+```
+
+每筆資料以 `tr.dataRow` 為主列，透過 `$(tr).data('row')` 儲存該列的 JSON 物件。當 Column 設定了 `alignTop`（多列欄位）時，`trLength > 1`，一筆資料由多個 `<tr>` 組成。
+
+### 主要公開 API 方法
+
+以下方法皆透過 `$('#dgId').datagrid('methodName', param)` 呼叫：
+
+| 方法 | 參數 | 說明 |
+|------|------|------|
+| `init` | `options?` | 初始化元件：解析 `data-options`、建立欄位標題、繫結事件、呼叫 `load` |
+| `load` | `{ page }?` | 向伺服器請求資料（`$.loadData`），觸發 `onBeforeLoad` → 取得資料 → `loadData` |
+| `loadData` | `{ rows, total, keys }` | 將資料陣列渲染至 tbody，處理 relation 欄位的非同步查詢後批次插入 |
+| `reload` | — | 等同 `load`（分頁元件的 refresh 按鈕呼叫） |
+| `setWhere` | `whereItems[] \| whereStr` | 設定查詢條件並重新載入（支援陣列或字串） |
+| `getRows` | — | 回傳目前 tbody 中所有資料列的 JSON 陣列 |
+| `getSelected` | — | 回傳目前選取列的 JSON 物件，無選取時回傳 `null` |
+| `getSelectedIndex` | — | 回傳選取列的索引（`tr.selected.dataRow` 的 index / trLength） |
+| `getRow` | — | 回傳目前正在編輯中的列資料（含編輯器當前值） |
+| `getRowByIndex` | `index` | 依索引取得列的 JSON 物件 |
+| `getChecked` | — | 回傳所有勾選列的 JSON 陣列 |
+| `getTotal` | — | 回傳 tfoot 合計列的 JSON 物件 |
+| `select` | `index` | 選取指定索引的列（加上 `.selected.info` CSS） |
+| `check` / `uncheck` | `index` | 勾選/取消勾選指定列 |
+| `checkAll` / `uncheckAll` | — | 全選/取消全選 |
+| `beginEdit` | `index` | 對指定列啟動行內編輯：為每個 td 建立對應編輯器 |
+| `endEdit` | `callback?` | 結束編輯：驗證 → `updateRow` → 若 `autoApply` 則自動 `submit` |
+| `cancelEdit` | `callback?` | 取消編輯：若為新增列則移除該列，否則還原顯示 |
+| `insert_row` | — | 新增列：取得預設值 → `appendRow` → `beginEdit` |
+| `edit_row` | `index?` | 編輯列：檢查 readonly → 觸發 `onUpdate` → `beginEdit` 或開啟 `editForm` |
+| `delete_row` | `index?` | 刪除列：確認對話框 → 加入 `deletedRows` → 若 `autoApply` 則 `submit` |
+| `copy_row` | `prompt?` | 複製列：以選取列為範本（排除 keys 欄位）建立新資料 |
+| `appendRow` | `row` | 在 tbody 末尾插入一列（不啟動編輯） |
+| `removeRow` | `index` | 從 DOM 移除指定列並重新編號 |
+| `updateRow` | `{ index, row }` | 更新指定列的資料與顯示（同時追蹤至 `updatedRows`） |
+| `submit` | `success?, error?` | 將 `insertedRows`/`updatedRows`/`deletedRows` 透過 `$.updateData` 送出 |
+| `acceptChanges` | `isLoad?` | 清空變更追蹤（`insertedRows`/`updatedRows`/`deletedRows`） |
+| `getChangedDatas` | — | 回傳含 inserted/updated/deleted 的變更資料陣列（含子表） |
+| `validate` | `row?` | 檢查主鍵重複（`duplicateCheck`） |
+| `validateRow` | `index` | 驗證指定列所有欄位（必填、XSS、自訂 validType），失敗顯示錯誤 |
+| `readonly` | `true/false` | 切換唯讀模式：隱藏/顯示編輯相關按鈕，加上 `table-readonly` CSS |
+| `setEditorValue` | `{ field, value }` | 設定編輯中指定欄位的編輯器值 |
+| `getEditorValue` | `field` | 取得編輯中指定欄位的編輯器值 |
+| `setEditorReadonly` | `{ field, value }` | 設定編輯中指定欄位的唯讀狀態 |
+| `getColumnOption` | `field` | 取得欄位的完整設定物件（含 width, trIndex 等） |
+| `setColumnTitle` | `{ field, title }` | 動態更改欄位標題 |
+| `showColumn` / `hideColumn` | `field` | 動態顯示/隱藏欄位（設定存入 `localStorage`） |
+| `getToolItem` | `name` | 依 onclick 名稱取得工具列按鈕的 jQuery 物件 |
+| `openQuery` | — | 開啟查詢面板（Dialog 模式時以 modal 顯示） |
+| `export` | `options?` | 匯出 Excel：收集欄位 → `$.exportData` |
+| `exportReport` | `options?` | 列印報表：`$.exportFile('report', ...)` |
+| `importExcel` | `options?` | 匯入 Excel：彈出上傳對話框 → `$.ajaxSubmit` 至 `../excelfile` |
+| `getDetailGrid` | `excludeForm?` | 取得以此 DataGrid 為 `parentObject` 的所有子 DataGrid |
+| `getParentGrid` | — | 取得以此 DataGrid 為 `targetObject` 的父 DataGrid |
+| `getParentValues` | — | 從父元件取得關聯鍵值（用於新增子列時帶入父鍵） |
+
+### 資料載入流程
+
+```
+init()
+  → acceptChanges(true)             // 初始化變更追蹤
+  → loadColumnSettings()            // 從 localStorage 讀取隱藏欄位設定
+  → bindEvent()                     // 繫結 click 事件
+  → load()
+       ↓
+  parentObject 且無 parentTable？ → 中止（等待父元件 select 後再載入）
+       ↓
+  組裝參數 param { rows, page, whereStr, whereItems, sort, order, ... }
+       ↓
+  觸發 onBeforeLoad(param) → 回傳 false 可中止載入
+       ↓
+  loadCache() 嘗試從記憶體快取載入 → 成功則跳過 AJAX
+       ↓
+  $.loadData(remoteName, param, success, error)   ← AJAX POST
+       ↓ success
+  acceptChanges(true)
+  loadData(data)
+    → 清空 tbody
+    → 非同步載入 relation 欄位的對照值（$.when + $.getDisplayRowP）
+    → 逐列呼叫 insertRow() 建立 DOM
+    → refreshPagination(total)       // 更新分頁按鈕
+    → createPageTotal(data)          // 計算合計
+    → 觸發 loadAction（若有，如 insert_row / edit_row）
+    → 觸發 onLoad(data)
+    → loadDetail()                   // 載入子表
+```
+
+**關鍵細節**：
+- `rows` 參數為 `-1` 時表示不分頁（`pagination: false`）
+- 當資料量大時（`data.pageSize` 有值），使用 `setTimeout` 分批插入以避免 UI 凍結
+- Relation 欄位透過 `$.when` 批次查詢對照值後，以 `relationValues` 快取供 `formatDisplay` 使用
+
+### 編輯流程
+
+#### 行內編輯（無 editForm）
+
+```
+點擊列 (tr click)
+  → select(index)
+  → onSelect(index, row)
+  → loadDetail(row)                  // 通知子表
+  → editOnEnter 為 true？
+      → edit_row(index)
+           → endEdit()               // 先結束上一列的編輯
+           → beginEdit(index)
+                → 為每個 td 建立編輯器（依 column.editor.type）
+                → 觸發 onShowEditor(index, field, editor) 可替換編輯器
+                → 設定焦點至 focusedField 或第一個可編輯欄位
+```
+
+#### 結束編輯
+
+```
+endEdit()
+  → validateRow(index)              // 逐欄驗證：XSS → 必填 → validType
+  → 驗證失敗？ → 顯示錯誤訊息，中止
+  → updateRow({ index, row })       // 更新 DOM 與資料
+  → 觸發 onEndEdit(index, row)
+  → autoApply 為 true？
+      → submit()                    // 立即送出 AJAX 儲存
+           → $.updateData(remoteName, changedDatas)
+           → 成功：acceptChanges() → 觸發 onApplied(data)
+```
+
+#### 透過 EditForm 編輯
+
+```
+edit_row(index)
+  → 有 editForm？
+      → $.addLock()                  // recordLock 時先鎖定記錄
+      → form.open({ row, status:'updated', keys })
+      ← 由 DataForm 元件處理儲存
+```
+
+#### 新增列
+
+```
+insert_row()
+  → readonly？ → 中止
+  → getParentValues()                // 取得父元件關聯鍵值
+  → getDefaultValues(parentRow)      // 計算預設值（default/carryOn/chatUX）
+  → 觸發 onInsert(defaultRow) → 回傳 false 可取消
+  → 有 editForm？
+      → form.open({ row, status:'inserted' })
+  → 無 editForm？
+      → endEdit() → appendRow(defaultRow) → beginEdit(lastIndex)
+      → 新列加入 opts.insertedRows
+```
+
+#### 刪除列
+
+```
+delete_row(index)
+  → readonly？ → 中止
+  → 觸發 onDelete(row) → 回傳 false 可取消
+  → confirmDelete 為 true？ → $.confirm 確認對話框
+  → 該列為新增列（在 insertedRows 中）？
+      → 直接 removeRow，不送 AJAX
+  → 該列為既有資料？
+      → $.addLock()（recordLock 時）
+      → 加入 opts.deletedRows
+      → autoApply？ → submit() → removeRow()
+```
+
+### 工具列按鈕對應
+
+工具列按鈕的 `onclick` 值對應到 `$.fn.datagrid.methods` 中的方法名稱。若找不到對應方法，則呼叫 `$.callFunction(onclick)` 作為全域函式執行。按鈕點擊後會短暫 disable 200ms 防止重複觸發。
+
+### 主從連動機制（Master-Detail）
+
+1. **父子宣告**：子 DataGrid 設定 `parentObject` 指向父元件 ID，`whereItems` 定義關聯欄位對應
+2. **init 階段**：若 `parentObject` 有設定但尚未有 `parentTable`，init 會中止載入（`return true`），等待父元件觸發
+3. **父元件 select**：父元件列被點擊時，`bindEvent` 中的 tr click handler 會：
+   - 組裝 `whereItems`（將 `targetWhereItems` 的 `sourceField` 替換為實際值）
+   - 呼叫子元件的 `setWhere(whereItems)` 重新載入
+4. **loadDetail**：父元件載入資料後呼叫 `loadDetail()`，傳遞 `parentTable`、`parentRow`、`parentKeys` 給子表
+5. **快取機制**：子表透過 `saveCache` / `loadCache` 以父鍵值為 key 快取資料，切換父列時先存再取
+
+### 分頁行為
+
+- 分頁按鈕由 `refreshPagination(total)` 動態建立於 `ul.pagination` 中
+- 顯示邏輯：目前頁 ±2 頁的頁碼按鈕 + 首頁/末頁/上頁/下頁 + 重新整理
+- `pageCount: false` 時隱藏總頁數，僅顯示上頁/下頁（適用於大量資料）
+- `pageJump: true` 時顯示跳頁輸入框，Enter 鍵觸發載入
+- `pageList` 有值時顯示每頁筆數下拉選單，切換時自動重新載入
+
+### 排序行為
+
+- 可排序欄位的 `<th>` 上有 `.sort-btn`（`fa fa-sort`）
+- 點擊切換 asc/desc，將 `opts.sort` 與 `opts.order` 帶入 `load()` 參數送至伺服器端排序
+
+### 查詢面板行為
+
+| 查詢模式 | 前端行為 |
+|----------|----------|
+| `dialog` | `openQuery()` 以 Bootstrap modal 開啟查詢表單 |
+| `panel` | `initQuery()` 初始化內嵌面板，載入預設值 |
+| `autoQueryColumn` | 在 thead 插入 `tr.autoquerytr`，每欄提供輸入框與運算子切換按鈕（`%` → `%%` → `=` → `>=` → `<=` → `!=` → `in` 循環），按 refresh 按鈕執行 `autoQuery` |
+
+### 欄位隱藏持久化
+
+- `columnHidable: true` 時，欄位標題及 label 均可透過 popover 按鈕隱藏
+- 隱藏設定存入 `localStorage`，key 格式為 `datagrid_{id}_hcolumns_{user}_{pathname}`
+- 工具列右側顯示眼睛圖示（`.show-column`），點擊可恢復已隱藏的欄位
+
+### 內建編輯器類型
+
+`$.fn.datagrid.defaults.editors` 定義了以下行內編輯器，用於 `beginEdit` 時依 Column 的 `editor.type` 建立：
+
+`label`、`textbox`、`password`、`textarea`（彈出 modal 編輯）、`htmleditor`（彈出 UMEditor modal）、`combobox`、`refval`、`autocomplete`、`numberbox`、`datebox`、`datetimebox`、`timebox`、`dateselect`、`switch`、`options`、`fileupload`、`creator`、`updater`、`submenu`
+
+每個編輯器實作四個方法：`init(container, options)`、`getValue(target)`、`setValue(target, value)`、`readonly(target, value)`。
+
+### ChatUX 整合
+
+init 階段會偵測 URL 中的 `c=` 參數與 `sessionStorage` 中的聊天指令，自動轉換為查詢條件或操作指令：
+- 「新增」→ 設定 `loadAction = 'insert_row'`
+- 「更改」→ 設定 `loadAction = 'edit_row'`
+- 「刪除」→ 設定 `loadAction = 'delete_row'`
+- 「印表」/「統計」→ 尋找匯出按鈕並設定對應 `loadAction`
+
+未能直接匹配的查詢欄位名稱會透過 AJAX 呼叫 `chatUXGetColumn` 以 AI 方式模糊比對。
+
+### 其他前端特有行為
+
+- **XSS 防護**：`validateXss` 為 true 時，顯示值會經 `$.validateScript` 過濾；編輯時 `validateRow` 會呼叫 `$.xssValidate` 檢查
+- **Record Lock**：`recordLock` 為 true 時，`edit_row` 和 `delete_row` 在進入編輯前會透過 `$.addLock` 向伺服器請求記錄鎖定
+- **Creator/Updater 自動填入**：`updateRow` 時自動以 `sessionStorage.clientInfo.user` 及當前時間填入 creator/updater 欄位
+- **CarryOn 預設值**：新增列時，若欄位設定 `carryOn: true`，會自動帶入上一筆編輯過的列的同欄位值（存於 `jq.data('lastRow')`）
+- **多列欄位（trLength > 1）**：當 Column 設定 `alignTop` 指向另一欄位時，該欄位會成為子列，一筆資料渲染為多個 `<tr>`。此時自動停用 `table-hover` 和 `table-striped`
+- **離線模式**：Webview 環境下偵測 `viewOffline` 按鈕並呼叫 `getOfflineNum` 顯示離線資料數量
+- **Drill-down**：init 時檢查 URL 加密參數 `targetRemoteName`，若與當前 `remoteName` 相符則套用 drill-down 的 `whereItems` 和 `loadAction`
+
 ## 備註
 
 - DataGrid 是 RWD 前端最常用的元件，幾乎所有模組都會使用。

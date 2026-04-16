@@ -23,6 +23,26 @@
 | **text** | string | — | 區塊標題 |
 | **showTextbox** | bool | true | 是否顯示文字輸入框 |
 
+## 前端行為（JavaScript）
+
+> 原始碼：`bootstrap.infolight.js` 第 12804–12864 行
+
+### 公開方法
+
+| 方法 | 說明 |
+|------|------|
+| `getValue()` | 收集所有子 `<input>` 的值，以 `separator` 合併回傳 |
+| `setValue(value)` | 以 `separator` 拆分值後分配至各子 `<input>`，不足的留空 |
+| `readonly(bool)` | 對所有子 `<input>` 設定 `disabled` |
+| `options()` | 取得初始化選項 |
+
+### 關鍵行為
+
+- **兩種初始化模式**：
+  - **items 模式**：依 `items` 陣列建立 `input-group-addon` 標籤和輸入框，第一個 item 的文字置於輸入框前方。
+  - **count 模式**：依 `count` 數量建立等量輸入框，以 `separator` 文字作為分隔標籤。
+- **包裝結構**：外層為 `input-group`，各輸入框之間以 `input-group-addon` 分隔。
+
 ## 備註
 
 - 每個 Item 可設定是否顯示文字輸入框（`showTextbox`）。

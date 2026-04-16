@@ -85,6 +85,33 @@ LineChart 透過 RemoteName 綁定資料來源，以 KeyField 為 X 軸分類欄
 | **formatString** | string | 下拉選單（可編輯）`[ItemsEditor]` | — | 格式字串（%d/%.2f/$%.2f 等） |
 | **style** | string | 下拉選單（可編輯）`[ItemsEditor]` | — | 顯示樣式（Line/Bar），可實現混合圖 |
 
+## 前端行為（JavaScript）
+
+| 項目 | 說明 |
+|------|------|
+| **原始檔** | `jquery.infolight.chart.js` |
+| **jQuery 外掛** | `$.fn.linechart`（透過 `$.createObj('linechart', ...)` 建立） |
+| **CSS 選擇器** | `.info-linechart` |
+| **圖表引擎** | jqPlot（`$.jqplot`） |
+| **渲染器** | 折線預設使用 jqPlot 內建折線渲染，DataField.style 為 `Bar` 時使用 `$.jqplot.BarRenderer` |
+
+### 方法
+
+| 方法 | 說明 |
+|------|------|
+| `init` | 讀取 `data-options` 解析設定，設定寬高、呼叫 `load`，若有 `onClick` 則綁定 `jqplotDataClick` 事件 |
+| `load` | 組合查詢參數（whereStr、whereItems、pageSize），呼叫 `onBeforeLoad` 回呼後透過 `$.loadData` 向後端取資料，有資料則呼叫 `loadData`，無資料則隱藏元件 |
+| `loadData` | 銷毀既有 plot → 若 `groupByKey` 為 true 則呼叫 `$.groupSum` 聚合 → 依 `dataFields` 組裝 series（Line 或 Bar 混合）與 ticks → 呼叫 `$.jqplot` 繪製圖表，X 軸使用 `CategoryAxisRenderer` |
+| `setWhere` | 更新 whereStr / whereItems 後重新呼叫 `load`，供 Form 元件篩選條件聯動 |
+| `resize` | 呼叫 `plot.replot({ resetAxes: true })` 重繪以適應容器尺寸變化 |
+
+### 與 Form 的整合（bootstrap.infolight.js）
+
+- `form('getLineChart')` 透過 `.info-linechart` 找出 `queryObj` 與 Form id 相符的折線圖元件。
+- Form 設定篩選條件時自動呼叫 `linechart('setWhere', whereItems)` 連動更新。
+- Tab 切換時自動偵測寬度並呼叫 `resize` 重繪。
+- 視窗 resize 事件（200ms debounce）會對所有 `.info-linechart` 呼叫 `resize`。
+
 ## 備註
 
 - LineChart 與 BarChart 共用相同的圖表共通屬性模式（RemoteName、KeyField、DataFields、圖例、尺寸、事件），差異在於 LineChart 獨有 `Smooth` 屬性，BarChart 獨有 `Stack` 和 `BarDirection`。

@@ -68,6 +68,43 @@ STEPS 是 RWD 工具箱的步驟精靈容器，用於引導使用者依序完成
 - **Render()**：渲染步驟內容（`div.tab-pane`，帶 `role="tabpanel"`），內部呼叫 `RenderChildren()` 渲染子元件。
 - 每個 Step 的 `Id` 由 STEPS 渲染時自動以 `{STEPS.Id}_{index}` 格式指派。
 
+## 前端行為（JavaScript）
+
+> 原始碼位置：`bootstrap.infolight.js` 第 10622–10748 行
+> jQuery 外掛名稱：`$.fn.steps`
+
+### 初始化流程
+
+1. 解析 `data-options`，呼叫 jQuery SmartWizard 外掛 (`smartWizard()`) 進行初始化。
+2. 傳入設定包含：`keyNavigation: false`（關閉鍵盤導覽）、`anchorClickable`、`theme`（對應 `style`）、`transition`（對應 `animation`，速度固定 400ms）、`justified`、`selected`。
+3. 語系文字（下一步 / 上一步按鈕）取自 `$.fn.locale.next` / `$.fn.locale.previous`。
+
+### 事件綁定（bindEvent）
+
+- **下一步按鈕（`.sw-btn-next`）**：點擊時觸發 `onNextClick` 回呼，傳入「前一步索引」（當前索引 - 1）。若到達最後一步且 `lastPageLimit` 為 true，隱藏上一步按鈕並移除所有步驟的 `done` 狀態。
+- **上一步按鈕（`.sw-btn-prev`）**：點擊時觸發 `onPrevClick` 回呼，傳入「後一步索引」（當前索引 + 1）。
+
+### 與表單（Form）的整合
+
+當 Steps 位於 `.bootstrap-form` 內時，自動啟用表單精靈模式：
+
+1. 隱藏表單工具列（`.dataform-toolitem`）。
+2. 在工具列新增一個「確定」按鈕（`.sw-btn-ok`），點擊後呼叫 `bindingForm.form('submit')` 提交表單。
+3. 監聽 `stepContent` 事件：
+   - 最後一步時，隱藏「下一步」、顯示「確定」；若 `lastPageLimit` 為 true，同時隱藏「上一步」並禁用錨點點擊。
+   - 非最後一步時，顯示「下一步」、隱藏「確定」。
+4. 表單送出成功後（`onApplied`）：自動跳轉到下一步（`smartWizard('next')`）並新增一列（`form('insert_row')`）。
+5. 若未自訂 `onApplied`，預設顯示「儲存成功」訊息，並關閉目前頁籤。
+
+### 方法
+
+| 方法 | 說明 |
+|------|------|
+| `options` | 取得元件設定 |
+| `init` | 初始化 SmartWizard 並綁定事件 |
+| `bindEvent` | 綁定上一步/下一步/確定按鈕事件 |
+| `resize` | 重新調整步驟大小（透過重設 `current_index` 強制重新渲染當前步驟） |
+
 ## 備註
 
 - STEPS 類別與 Step 內部類別都標記了 `[DataOption]`，屬性會序列化為 `data-options` 供前端 SmartWizard 外掛初始化。

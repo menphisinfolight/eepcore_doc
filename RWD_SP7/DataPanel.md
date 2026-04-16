@@ -40,3 +40,12 @@ DataPanel 用來在頁面上呈現一組表單欄位，可選擇性地以 `<fiel
 - 當 `Title` 有值時，會以 `<fieldset><legend>` 包裹整個表單區塊；無值時直接渲染表單。
 - 內部建立 `DataForm` 物件來執行渲染，將 Columns 和 HorizontalColumnsCount 傳入。
 - `PId` 為內部屬性（`DataOption(false)`），不輸出至前端 data-options。
+
+## 前端行為（JavaScript）
+
+DataPanel **沒有專屬的前端 JavaScript 元件**（在 `bootstrap.infolight.js` 中無 `datapanel` 相關的 `$.createObj` 或 editor 定義）。
+
+DataPanel 為**純伺服器端渲染元件**，其行為：
+- 伺服器端（C#）建立 `DataForm` 物件進行 HTML 渲染，產出靜態的表單結構（`<fieldset>`、`<legend>`、表單欄位 HTML）。
+- 內部各欄位的前端互動行為由各自的 **editor 元件**（如 textbox、combobox、datebox 等）負責，DataPanel 本身不參與前端邏輯。
+- 前端不需要對 DataPanel 容器進行初始化或綁定事件。
