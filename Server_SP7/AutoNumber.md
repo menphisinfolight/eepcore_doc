@@ -61,14 +61,112 @@ AutoNumber 在資料新增時自動產生不重複的流水號編號。搭配 [S
 
 ### OnGetFixed 事件
 
+當 `getFixed` 屬性不夠彈性時，用這個事件動態計算前綴（例如要依客戶、部門、單據欄位組合）。
+
+**簽名**：
+
 ```csharp
-// 簽名：string fn(sender, fixedString, rows)
-// 可程式化修改前綴
-public string autoOrderNo_onGetFixed(object sender, string fixedString, dynamic rows)
+string fn(object sender, string fixedString, dynamic rows)
+```
+
+| 參數 | 型別 | 說明 |
+|------|------|------|
+| `sender` | `object` | AutoNumber 實例，需 cast：`(sender as AutoNumber)` |
+| `fixedString` | `string` | `getFixed` 屬性解析後的預設前綴（例如 `"202604"`），若 `getFixed` 為空則為 `""` |
+| `rows` | `dynamic` | 要 INSERT 的 JArray（可存取第一筆的欄位：`rows[0].欄位名` 或 `rows[0]["欄位名"]`） |
+| 回傳 | `string` | 最終要用的前綴字串（會與流水號串接） |
+
+**觸發時機**：`AutoNumber.Init()` 呼叫一次，在 SELECT SYSAUTONUM 查詢當前流水號**之前**。前綴不同會對應到 SYSAUTONUM 中不同的 `FIXED` 列，各自獨立計數。
+
+#### 範例 1：客戶編號 + 年月（每客戶每月獨立流水）
+
+```csharp
+public string an出貨單_onGetFixed(object sender, string fixedString, dynamic rows)
 {
-    return fixedString + "A"; // 加上自訂後綴
+    // 取得目前的年月，格式為 yyyyMM (例如：202603)
+    string datePart = DateTime.Now.ToString("yyyyMM");
+
+    // 組合：客戶編號 + "_" + 年月
+    fixedString = rows[0].客戶編號 + "_" + datePart;
+
+    return fixedString;
 }
 ```
+
+產生結果：`C001_202604-0001`、`C001_202604-0002`、`C002_202604-0001`（C001 和 C002 各自獨立）
+
+#### 範例 2：依部門代碼動態前綴
+
+```csharp
+public string an採購單_onGetFixed(object sender, string fixedString, dynamic rows)
+{
+    var clientInfo = (sender as AutoNumber).Module.ClientInfo;
+    string deptCode = (string)rows[0].DEPT_CODE;
+    string yearMonth = DateTime.Now.ToString("yyyyMM");
+
+    // PO-部門-年月：PO-HR-202604、PO-IT-202604
+    return $"PO-{deptCode}-{yearMonth}";
+}
+```
+
+#### 範例 3：依單據類型前綴（條件式）
+
+```csharp
+public string an訂單_onGetFixed(object sender, string fixedString, dynamic rows)
+{
+    string orderType = (string)rows[0].ORDER_TYPE;
+    string yearMonth = DateTime.Now.ToString("yyyyMM");
+
+    // 內銷用 D、外銷用 E 開頭
+    string prefix = orderType == "EXPORT" ? "E" : "D";
+    return $"{prefix}{yearMonth}";
+}
+```
+
+產生結果：`D202604-001`（內銷）、`E202604-001`（外銷）
+
+#### 範例 4：民國年 + 週次
+
+```csharp
+public string an週報_onGetFixed(object sender, string fixedString, dynamic rows)
+{
+    var now = DateTime.Now;
+    int rocYear = now.Year - 1911;  // 民國年
+    int weekOfYear = System.Globalization.ISOWeek.GetWeekOfYear(now);
+
+    // 格式：113W16（民國113年第16週）
+    return $"{rocYear:D3}W{weekOfYear:D2}";
+}
+```
+
+#### 範例 5：查資料庫動態取前綴
+
+```csharp
+public string an發票_onGetFixed(object sender, string fixedString, dynamic rows)
+{
+    var db = (sender as AutoNumber).Module.DbHelper;
+    var clientInfo = (sender as AutoNumber).Module.ClientInfo;
+
+    // 查使用者所屬公司的發票字軌
+    var dt = db.ExecuteDataTable(
+        $"SELECT TAX_PREFIX FROM COMPANY WHERE COMPANY_ID = {db.MarkValue((object)clientInfo.Solution)}"
+    );
+    string taxPrefix = dt.Rows.Count > 0 ? dt.Rows[0]["TAX_PREFIX"].ToString() : "AA";
+
+    // 每兩個月一期（發票字軌 + 期別）
+    int period = ((DateTime.Now.Month - 1) / 2) + 1;
+    return $"{taxPrefix}{DateTime.Now:yy}{period:D2}";
+}
+```
+
+產生結果：`AA2602-001`（AA 字軌、2026 年第 2 期）
+
+#### 注意事項
+
+- 回傳的 `fixedString` 不同 → SYSAUTONUM 中會是不同列，各自獨立計數
+- 若要**每天**重置編號，回傳含 `yyyyMMdd`；若要**每月**重置，含 `yyyyMM`
+- 若 `rows[0].欄位` 可能為 null，記得判空處理
+- `rows` 是 `JArray`，批次 INSERT 多筆時通常只用 `rows[0]` 當作群組依據（同一批假設同前綴）
 
 ## 運作流程
 
