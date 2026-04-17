@@ -164,6 +164,9 @@ const GROUPS = [
     ['SYS_TODOLIST', '待辦清單'], ['SYS_FLDEFINITION', '流程定義'], ['SYS_FLINSTANCESTATE', '流程實例狀態'],
     ['SYS_EXTAPPROVE', '外部簽核'], ['SYS_SSO_SOLUTION', 'SSO 方案'], ['SYS_INFOPAY', '金流閘道'],
   ]},
+  { title: '問題記錄', items: [
+    ['問題_Oracle_建立索引_ORA-00903', 'Oracle 建索引 bug（ORA-00903）'],
+  ]},
 ];
 marked.setOptions({ highlight: function(code, lang) { if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value; return hljs.highlightAuto(code).value; } });
 function buildSidebar() {
