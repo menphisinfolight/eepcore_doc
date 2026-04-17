@@ -188,5 +188,7 @@ Word 報表中的流程簽核區塊使用固定欄位名：
 - Excel 匯出預設最大筆數為 1000（`queryOptions.PageSize = 1000`）。
 - `GetWordColdef` 和 `GetExcelColRows` 分別從 `coldef`（SYS_DOCFILES 相關）和 `SYS_XLSFILES` 取得欄位格式設定。
 - 支援 PDF 輸出（密碼保護、浮水印），由 `Parser` Adapter 實作轉換。
-- `ExportWordLoop` 中 subDetailCommands 的查詢邏輯有冗餘：外層已查但未使用，可能為開發中功能。
-- `ExportsWord` 中同樣有 subDetailCommands 的重複查詢與未完整使用的邏輯。
+- **`ExportWord`（L329-480）有冗餘/未完成的 subDetailCommands 邏輯**：
+  - L411、L415：`subDetailCommands` 宣告在 `if/else` block 內，變數作用域受限於該區塊，**純死碼**（宣告後即失效）。
+  - L432：`GetDetailCommands(commandName)` 的呼叫參數與 L407 完全相同，取得的是同一組 detail commands；後續 foreach 重複查詢 detail 資料並填入 `sdRows`。`sdRows` 雖有傳給 `Parser.PreviewWord`，但內容與 `dRows` 重複。推測原意是查 sub-details（明細的明細），但實作未完成。
+- **`ExportWordLoop`（L482-571）沒有此問題**，只有一個乾淨的 `detailCommands` 迴圈（L542-554），沒用到 `subDetailCommands`。
