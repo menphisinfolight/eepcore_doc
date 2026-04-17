@@ -217,6 +217,192 @@ WHERE AUTOID = 'OrderNo' AND FIXED = '202604' AND CURRNUM = 1
 | InvNo | `_'INV'yyyyMM` | 3 | 1 | `INV202604001`, `INV202604002` |
 | SeqNo | `_'A'` | 5 | 100 | `A00100`, `A00101` |
 
+## 在 C# 中手動取號（不使用 UpdateComponent）
+
+當你用 C# 自己寫 INSERT（例如 API、`onBeforeApply` 事件中、客製 Action），又要維持 SYSAUTONUM 的一致性時，**不要自己查 SYSAUTONUM + 自己 UPDATE** — 應該透過 AutoNumber 元件實例來取號。
+
+### 核心 API 三步驟
+
+```csharp
+var autoNumber = Container.GetComponent<AutoNumber>("your_autoNumber_id");
+
+autoNumber.Init(rows);              // 1. 查 SYSAUTONUM 讀取目前 CURRNUM（必須先呼叫）
+var no = autoNumber.GetValue();     // 2. 取下一個編號（例如 "202604001"），內部 _currentValue += Step
+var sqls = autoNumber.GetSqls();    // 3. 產生 UPDATE/INSERT SYSAUTONUM 的 SQL（樂觀鎖）
+```
+
+| 步驟 | 必要性 | 說明 |
+|------|--------|------|
+| `Init(rows)` | **必要，且只能一次** | 觸發 `OnGetFixed` 事件、計算 `_fixedString`、SELECT SYSAUTONUM 取得當前 CURRNUM |
+| `GetValue()` | 每筆一次 | 回傳格式化後的編號字串，內部流水號累加（`_currentValue += Step`） |
+| `GetSqls()` | **必要（否則 SYSAUTONUM 不會更新）** | 產出 1 條 UPDATE 或 INSERT SQL，**必須在同一 Transaction 中執行** |
+
+### 情境 1：在 `onBeforeApply` 事件中手動取號
+
+```csharp
+public void uc訂單_onBeforeApply(object sender, dynamic rows, List<string> sqls)
+{
+    var module = (sender as UpdateComponent).Module;
+
+    // 取得 AutoNumber 元件實例
+    var autoNumber = module.GetComponent<AutoNumber>("an訂單");
+
+    // 初始化（傳入 inserted rows 讓 OnGetFixed 能存取欄位）
+    var inserted = (JArray)rows["inserted"];
+    autoNumber.Init(inserted);
+
+    // 對每筆 INSERT 取號並寫回欄位
+    foreach (JObject row in inserted)
+    {
+        row["ORDER_NO"] = autoNumber.GetValue();
+    }
+
+    // 將 SYSAUTONUM 更新 SQL 加入同一 Transaction
+    sqls.AddRange(autoNumber.GetSqls());
+}
+```
+
+### 情境 2：在客製 API / Action 中完整手動流程
+
+適用於前端呼叫 `../api/xxx` 客製端點時：
+
+```csharp
+public object 建立訂單(JObject input)
+{
+    var dataModule = new DataModule(ClientInfo, "訂單模組");
+    var autoNumber = dataModule.GetComponent<AutoNumber>("an訂單");
+
+    var orderData = new JArray { input };  // 包成 JArray 供 Init 使用
+
+    // 在 transaction 中執行
+    using (var db = dataModule.CreateDatabaseHelper(ClientInfo.Database, DatabaseType.Normal, transaction: true))
+    {
+        try
+        {
+            // 取號
+            autoNumber.Init(orderData);
+            var orderNo = autoNumber.GetValue();
+            input["ORDER_NO"] = orderNo;
+
+            // 自己組 INSERT SQL
+            var insertSqls = new List<string>
+            {
+                $"INSERT INTO ORDERS (ORDER_NO, CUSTOMER_ID, AMOUNT) VALUES ("
+                    + $"{db.MarkValue((object)orderNo)}, "
+                    + $"{db.MarkValue((object)input["CUSTOMER_ID"])}, "
+                    + $"{db.MarkValue((object)input["AMOUNT"])})"
+            };
+
+            // AutoNumber 的回寫 SQL 一併加入
+            insertSqls.AddRange(autoNumber.GetSqls());
+
+            // 執行並啟用影響筆數檢查（樂觀鎖必要）
+            db.ExecuteNonQuery(insertSqls, new UpdateOptions { RowsAffectCheck = true });
+
+            db.Transaction.Commit();
+            return new { orderNo };
+        }
+        catch
+        {
+            db.Transaction.Rollback();
+            throw;
+        }
+    }
+}
+```
+
+### 情境 3：批次取多個號
+
+一次 Init，多次 GetValue（每次累加 Step），最後一次 GetSqls：
+
+```csharp
+public object 批次建立訂單(JArray orders)
+{
+    var dataModule = new DataModule(ClientInfo, "訂單模組");
+    var autoNumber = dataModule.GetComponent<AutoNumber>("an訂單");
+
+    using (var db = dataModule.CreateDatabaseHelper(ClientInfo.Database, DatabaseType.Normal, true))
+    {
+        try
+        {
+            autoNumber.Init(orders);  // 只呼叫一次
+
+            var sqls = new List<string>();
+            foreach (JObject order in orders)
+            {
+                order["ORDER_NO"] = autoNumber.GetValue();  // 每筆各自取號
+                sqls.Add($"INSERT INTO ORDERS ... VALUES ({db.MarkValue(order["ORDER_NO"])}, ...)");
+            }
+            sqls.AddRange(autoNumber.GetSqls());  // 最後一次，一筆 UPDATE 就把 CURRNUM 推到最終值
+
+            db.ExecuteNonQuery(sqls, new UpdateOptions { RowsAffectCheck = true });
+            db.Transaction.Commit();
+            return new { count = orders.Count };
+        }
+        catch
+        {
+            db.Transaction.Rollback();
+            throw;
+        }
+    }
+}
+```
+
+### 為什麼不要自己查 SYSAUTONUM？
+
+**錯誤作法**：
+
+```csharp
+// ❌ 這樣做有並發衝突風險
+var dt = db.ExecuteDataTable("SELECT CURRNUM FROM SYSAUTONUM WHERE AUTOID='OrderNo'");
+var nextNum = (int)dt.Rows[0]["CURRNUM"] + 1;
+db.ExecuteNonQuery($"UPDATE SYSAUTONUM SET CURRNUM = {nextNum} WHERE AUTOID='OrderNo'");
+```
+
+問題：
+1. **並發衝突** — 兩個請求同時 SELECT 得到同值，UPDATE 也都成功 → 兩邊各拿到相同號碼
+2. **沒處理 FIXED 欄位** — 年月前綴、客戶前綴都要額外處理
+3. **沒處理首次建立** — SYSAUTONUM 無記錄時要 INSERT，不是 UPDATE
+4. **跳過 OnGetFixed 事件** — 失去自訂前綴邏輯
+
+**AutoNumber 的做法**：
+
+```sql
+-- 有記錄時：樂觀鎖 UPDATE（WHERE 條件含 CURRNUM = @old）
+UPDATE SYSAUTONUM SET CURRNUM = 6
+WHERE AUTOID = 'OrderNo' AND FIXED = '202604' AND CURRNUM = 5
+-- 若另一交易已改 CURRNUM，此 UPDATE 影響 0 筆 → RowsAffectCheck 拋錯 → Rollback
+
+-- 無記錄時：INSERT 新流水
+INSERT INTO SYSAUTONUM (AUTOID, FIXED, CURRNUM) VALUES ('OrderNo', '202604', 2)
+```
+
+### 關鍵注意事項
+
+1. **`RowsAffectCheck = true` 很重要** — 否則樂觀鎖失效，會產生重複號碼
+2. **`GetSqls()` 一定要在同一 Transaction** — 若 INSERT 主資料成功但 SYSAUTONUM 沒更新，下次取號會拿到相同值
+3. **`Init()` 只能呼叫一次** — 重複呼叫會重置 `_currentValue`，之前 `GetValue()` 的累加會遺失
+4. **`GetValue()` 若超出 numDig 位數** — 不會截斷也不會報錯，只是前綴補零失效（例如 numDig=3 但值到 1500 → 產生 `1500` 四位數）
+5. **`Field` 屬性若未設定** — `GetValue()` 會拋 `EEPException`
+6. **Informix 的處理** — AutoNumber 內部已判斷 Connection 字串自動切換 SQL，手動呼叫時不用額外處理
+
+### 錯誤範例
+
+```csharp
+// ❌ 沒呼叫 Init → _currentValue 是 0，結果從 StartValue 開始算但不會查 SYSAUTONUM
+autoNumber.GetValue();
+
+// ❌ 漏呼叫 GetSqls → SYSAUTONUM 永遠停在初始值，下次取號重複
+autoNumber.Init(rows);
+row["NO"] = autoNumber.GetValue();
+// forgot autoNumber.GetSqls()!
+
+// ❌ 沒有 RowsAffectCheck → 樂觀鎖失效
+db.ExecuteNonQuery(sqls);  // 缺 UpdateOptions { RowsAffectCheck = true }
+
+// ❌ GetSqls 不在 Transaction 中 → 失敗時主表已 INSERT 但 SYSAUTONUM 沒更新
+```
+
 ## 與其他元件的關係
 
 ```
