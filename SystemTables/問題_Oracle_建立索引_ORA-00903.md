@@ -106,20 +106,6 @@ public override string GetCreateIndex(string tableName, string indexName, string
 
 Oracle 對不加引號的識別字會自動處理（轉大寫），若系統中表名都是標準大寫名稱，這樣最簡單。但不支援含特殊字元或保留字的表名。
 
-## 對照廠商回覆
-
-內部人員 Roland 於 2026-04-17 回覆：
-
-> #1：如要建立 ORACLE 資料庫索引，請直接透過 ORACLE 資料庫工具進行相關設定。關於此報錯，我們內部研究看看，會於下個版本 SP8 中修正。
->
-> #2：補充，目前此功能我測試，雖然有介面，但沒有實際在資料庫設定索引。因此還請同樣參考 1 樓，先透過資料庫工具設定。
-
-**Roland 的描述不完全正確**：
-
-- `IndexProvider.CreateIndex()` **有實際呼叫** `dbHelper.ExecuteNonQuery(sql)`，真的會送 SQL 到資料庫執行
-- 只是 Oracle 版本產生的 SQL 被資料庫拒絕（ORA-00903），因此**看起來像沒設定**
-- 在 **SQL Server / MySQL / DB2 / Informix** 此功能實際可用，能成功建立索引
-
 ## 暫時解法（客戶端）
 
 在 SP8 修正釋出前，Oracle 使用者：
