@@ -4,7 +4,7 @@
 
 ## 用途
 
-檔案上傳與下載的核心控制器，支援多種檔案類型（一般檔案、圖片、CSS、GeoJSON、SVG），並提供 EEP.NET 流程附件與聊天室圖片的專用存取端點。
+檔案上傳與下載的核心控制器，支援多種檔案類型（一般檔案、圖片、CSS、GeoJSON、SVG），並提供 EEP.NET 流程附件與 **AI Chat（OpenAI/Azure GPT）** 圖片的專用存取端點。
 
 ## URL 路由
 
@@ -29,8 +29,8 @@
 | `Flow` | POST | `/File/Flow` | `IFormCollection` | JSON | 流程附件上傳 |
 | `NetFlow` | GET | `/File/NetFlow` | `f`、`q`、`n` | FileResult | EEP.NET 流程附件下載 |
 | `NetFlow` | POST | `/File/NetFlow` | `IFormCollection` | JSON `[{name, size}]` | EEP.NET 流程附件上傳 |
-| `ChatImage` | GET | `/File/ChatImage` | `q`（檔名） | FileResult | 聊天室圖片下載 |
-| `ChatImage` | POST | `/File/ChatImage` | `IFormCollection`（含 `id`） | JSON `[{name, text, size}]` | 聊天室圖片上傳 |
+| `ChatImage` | GET | `/File/ChatImage` | `q`（檔名） | FileResult | AI Chat 圖片下載（給 GPT 分析用） |
+| `ChatImage` | POST | `/File/ChatImage` | `IFormCollection`（含 `id`） | JSON `[{name, text, size}]` | AI Chat 圖片上傳（給 GPT 分析用） |
 
 ## 關鍵邏輯
 
@@ -53,10 +53,12 @@
 - `Flow` action 透過 `EEPNetHelper.IsEEPNETFlow` 判斷是否為 EEP.NET 環境
 - EEP.NET 模式下由 `EEPNetFlowProvider` 處理上傳/下載
 
-### ChatImage 存檔
+### ChatImage 存檔（AI Chat 用，非聊天室）
 
+- 由 `ChatProvider`（OpenAI/Azure GPT 整合）處理
 - 上傳路徑：`design/chat/{Solution}/{id}_{timestamp}{ext}`
 - 檔名格式含時間戳防止覆蓋
+- 用途：讓使用者上傳圖片給 AI 模型做視覺分析（例如 GPT-4o 的圖像輸入），搭配 ChatPanel 元件使用
 
 ## 備註
 
