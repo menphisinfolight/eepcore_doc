@@ -355,10 +355,191 @@ div.clearfix
 | `openQuery` | — | 開啟查詢面板（Dialog 模式時以 modal 顯示） |
 | `export` | `options?` | 匯出 Excel：收集欄位 → `$.exportData` |
 | `exportReport` | `options?` | 列印報表：`$.exportFile('report', ...)` |
+| `exportWord` | `options?` | 匯出當前選取列為 Word/PDF（單筆）｜見下方[Word 匯出方法](#word-匯出方法) |
+| `exportWordPdf` | `name, password?, watermark?` | 當前選取列匯出 PDF（便捷） |
+| `exportWordExcel` | `name` | 以 Word 範本邏輯匯出為 Excel (.xlsx) |
+| `exportWordExcelPdf` | `name` | Excel 範本轉 PDF |
+| `exportWordAll` | `options?` | 批次：依查詢條件每筆各產生一檔，打包成 ZIP |
+| `exportWordLoop` | `options?` | 批次：多筆合併為單一 Word 檔（迴圈範本） |
+| `exportWordLoopPdf` | `name` | `exportWordLoop` 的 PDF 版 |
 | `importExcel` | `options?` | 匯入 Excel：彈出上傳對話框 → `$.ajaxSubmit` 至 `../excelfile` |
 | `getDetailGrid` | `excludeForm?` | 取得以此 DataGrid 為 `parentObject` 的所有子 DataGrid |
 | `getParentGrid` | — | 取得以此 DataGrid 為 `targetObject` 的父 DataGrid |
 | `getParentValues` | — | 從父元件取得關聯鍵值（用於新增子列時帶入父鍵） |
+
+### Word 匯出方法
+
+DataGrid 提供 3 種 Word 匯出模式（+ 3 個 PDF 便捷變體、1 個 Excel 變體），全部走相同的後端 `$.exportFile` 機制：
+
+| 模式 | 資料範圍 | 輸出 | 對應後端 |
+|------|----------|------|----------|
+| `exportWord` | 當前選取的單一列 + 明細 | 單一 Word 檔 | `ParserHelper.ExportWord` |
+| `exportWordLoop` | 符合查詢條件的多筆（合併到同一範本的迴圈） | 單一 Word 檔 | `ParserHelper.ExportWordLoop` |
+| `exportWordAll` | 符合查詢條件的多筆（各自產檔） | ZIP 壓縮檔 | `ParserHelper.ExportWordAll` |
+
+#### exportWord(options)
+
+匯出「當前選取列」為 Word (.docx)。呼叫前 **必須先用 `selectRow` 或使用者點選**讓 `getSelectedIndex() >= 0`，否則跳警告。
+
+**options 物件**：
+
+| 屬性 | 類型 | 預設值 | 說明 |
+|------|------|--------|------|
+| `name` | string | 取 `#_PATHNAME` 或 URL 最後一段 | 範本檔名（不含副檔名），後端會到 `design/word/{Solution}/{name}.docx` 找範本 |
+| `fileType` | string | `""` | 設 `"pdf"` 轉 PDF；其他值或空 → `.docx` |
+| `wordName` / `fileName` | string | — | 覆寫範本檔名（優先於 `name`） |
+| `downloadName` | string | `""` | 下載時顯示的檔名（不影響範本查找） |
+| `directOpen` | bool | `false` | `fileType='pdf'` 時：true = 瀏覽器內 inline 開啟、false = 下載 |
+| `password` | string | — | PDF 密碼保護 |
+| `watermark` | string | — | PDF 浮水印文字 |
+| `titleName` | string | — | 傳到範本 `${TitleName}` 佔位符（客製版才用） |
+
+**若 options 為字串**，會被包成 `{ name: options }`。
+
+**範例**：
+
+```javascript
+// 最簡用法：以當前 URL 路徑為範本名
+$('#dgMain').datagrid('exportWord');
+
+// 指定範本名
+$('#dgMain').datagrid('exportWord', '訂單報表');
+
+// 完整選項：PDF + 浮水印 + 密碼 + 自訂下載檔名
+$('#dgMain').datagrid('exportWord', {
+    name: '訂單報表',
+    fileType: 'pdf',
+    password: '1234',
+    watermark: '機密',
+    downloadName: 'Order_' + new Date().getTime(),
+    directOpen: false
+});
+```
+
+#### exportWordPdf(name, password, watermark)
+
+`exportWord` 的 PDF 便捷版，等於：
+
+```javascript
+$('#dgMain').datagrid('exportWord', { fileType: 'pdf', name, password, watermark });
+```
+
+#### exportWordExcel(name)
+
+以 Word 範本的邏輯（`${Field}` 語法）匯出為 **Excel** (.xlsx)。後端 `ParserHelper` 判斷 `filePath.Split(".")[1] == "xlsx"` 時會改呼叫 `Parser.PreviewExcel`。用於 Excel 範本有 `${...}` 佔位符的情境。
+
+```javascript
+$('#dgMain').datagrid('exportWordExcel', '訂單明細');  // → 訂單明細.xlsx
+```
+
+#### exportWordExcelPdf(name)
+
+`exportWordExcel` 轉 PDF：
+
+```javascript
+$('#dgMain').datagrid('exportWordExcelPdf', '訂單明細');
+```
+
+#### exportWordAll(options)
+
+**批次匯出：每筆各產一個檔，打包成 ZIP**。以 DataGrid 的 `whereStr` / `whereItems` 查詢所有符合筆資料，對每筆執行一次 Word 範本合成，最後打包。
+
+| 屬性 | 類型 | 說明 |
+|------|------|------|
+| `name` | string | 範本檔名 |
+| `fileType` | string | `"pdf"` 時每個檔都轉 PDF 再打包 |
+
+無 `whereItems` 覆寫選項 — 直接用 DataGrid 當前的查詢條件。
+
+```javascript
+// 用當前 DataGrid 的查詢條件，全部匯出為 ZIP
+$('#dgMain').datagrid('exportWordAll', '訂單報表');
+
+// PDF 打包
+$('#dgMain').datagrid('exportWordAll', {
+    name: '訂單報表',
+    fileType: 'pdf'
+});
+```
+
+#### exportWordLoop(options)
+
+**批次合併匯出：多筆資料填入同一範本的迴圈區段，產生單一檔案**。範本中要用 `{#loop}...{/loop}` 或類似迴圈標記。
+
+| 屬性 | 類型 | 說明 |
+|------|------|------|
+| `name` | string | 範本檔名 |
+| `fileType` | string | `"pdf"` 轉 PDF |
+| `whereItems` | array | 覆寫查詢條件（若為空陣列 → 用 DataGrid 的 whereItems） |
+| `downloadName` | string | 下載顯示檔名 |
+| `directOpen` | bool | PDF 直接瀏覽器開啟 |
+
+```javascript
+// 用當前查詢條件，合併所有筆到單一 Word
+$('#dgMain').datagrid('exportWordLoop', '月報');
+
+// 自訂查詢條件
+$('#dgMain').datagrid('exportWordLoop', {
+    name: '月報',
+    fileType: 'pdf',
+    whereItems: [
+        { field: 'MONTH', operator: '=', value: '2026-04' },
+        { field: 'STATUS', operator: '=', value: 'DONE' }
+    ],
+    directOpen: true
+});
+```
+
+#### exportWordLoopPdf(name)
+
+等於 `exportWordLoop({ fileType: 'pdf', name })`。
+
+### Word 匯出請求流程
+
+```
+前端：$('#dg').datagrid('exportWord', options)
+  ↓ 組 param = { remoteName, masterRow, fileType, wordName, downloadName, ... }
+  ↓ $.exportFile('word', name, param, onSuccess, onError, onComplete)
+
+AJAX POST ../main/file
+  body: { mode: 'exportFile', type: 'word', id: name, param: JSON.stringify(param) }
+  ↓
+後端：FileProvider.ExportFile(type, param)
+  switch (type)
+    case "word"     → ExportWord(id, options)          → ParserHelper.ExportWord
+    case "wordLoop" → ExportWordLoop(id, options, qp)  → ParserHelper.ExportWordLoop
+    case "wordAll"  → ExportWordAll(id, options, qp)   → ParserHelper.ExportWordAll
+  ↓ 回傳產生的檔名
+前端 onSuccess(file)
+  directOpen && pdf → window.open('../file?q=xxx&t=inline')
+  其他             → window.location.href = '../file?q=xxx&n=downloadName'
+```
+
+### 範本檔案位置
+
+後端 `ParserHelper` 在以下路徑依序尋找範本：
+
+```
+design/word/{Solution}/{name}.docx    ← 優先（站台專屬）
+design/word/{name}.docx                ← Fallback（共用）
+```
+
+若是 Excel 範本，副檔名改為 `.xlsx`，會觸發 Excel 分支。
+
+### 範本語法（簡述）
+
+| 語法 | 說明 |
+|------|------|
+| `${FIELD}` | 主表欄位值 |
+| `${@FIELD}` | 主表欄位顯示值（經 coldef 轉換） |
+| `${@User}` / `${@UserName}` | 登入者 ID / 名稱 |
+| `${@Today}` / `${@Now}` | 今日 / 現在時間 |
+| `${@Password}` / `${@Watermark}` | options.password / watermark |
+| `${@TitleName}` | options.titleName（客製版） |
+| 明細迴圈 | 範本定義的表格迴圈區塊（Parser 套件解析） |
+| 流程簽核 | `${@W}`、`${@WN}`、`${@WC}` 等（僅 ExportWord，Status=3 抽回會被排除） |
+
+---
 
 ### 資料載入流程
 
