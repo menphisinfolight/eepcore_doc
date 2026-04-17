@@ -262,45 +262,101 @@ public void uc訂單_onBeforeApply(object sender, dynamic rows, List<string> sql
 }
 ```
 
-### 情境 2：在客製 API / Action 中完整手動流程
+### 情境 2：請購單轉採購單（客製 API / Action）
 
-適用於前端呼叫 `../api/xxx` 客製端點時：
+實務場景：使用者在請購單（REQUISITION）按下「轉採購」按鈕，後端需要：
+
+1. 撈取指定請購單的抬頭與明細
+2. 用 AutoNumber 取採購單號
+3. 寫入採購單（PURCHASE_ORDER）抬頭與明細
+4. 更新請購單狀態為「已轉採購」
+5. 全部在同一 Transaction，任何一步失敗全部 Rollback
 
 ```csharp
-public object 建立訂單(JObject input)
+public object 轉採購(string reqNo)
 {
-    var dataModule = new DataModule(ClientInfo, "訂單模組");
-    var autoNumber = dataModule.GetComponent<AutoNumber>("an訂單");
+    var dataModule = new DataModule(ClientInfo, "採購模組");
+    var autoNumber = dataModule.GetComponent<AutoNumber>("an採購單");
 
-    var orderData = new JArray { input };  // 包成 JArray 供 Init 使用
-
-    // 在 transaction 中執行
     using (var db = dataModule.CreateDatabaseHelper(ClientInfo.Database, DatabaseType.Normal, transaction: true))
     {
         try
         {
-            // 取號
-            autoNumber.Init(orderData);
-            var orderNo = autoNumber.GetValue();
-            input["ORDER_NO"] = orderNo;
+            // ===== 1. 撈取請購單抬頭 =====
+            var reqHead = db.ExecuteDataTable(
+                $"SELECT * FROM REQUISITION WHERE REQ_NO = {db.MarkValue((object)reqNo)}");
+            if (reqHead.Rows.Count == 0)
+                throw new EEPException($"請購單 {reqNo} 不存在");
 
-            // 自己組 INSERT SQL
-            var insertSqls = new List<string>
+            var status = reqHead.Rows[0]["STATUS"]?.ToString();
+            if (status == "TRANSFERRED")
+                throw new EEPException($"請購單 {reqNo} 已轉採購過，不可重複");
+
+            // ===== 2. 撈取請購單明細 =====
+            var reqDetails = db.ExecuteDataTable(
+                $"SELECT * FROM REQUISITION_DETAIL WHERE REQ_NO = {db.MarkValue((object)reqNo)}");
+            if (reqDetails.Rows.Count == 0)
+                throw new EEPException($"請購單 {reqNo} 無明細資料");
+
+            // ===== 3. AutoNumber 取採購單號 =====
+            // 包成 JArray 傳給 Init，供 OnGetFixed 事件存取抬頭欄位
+            var headRows = new JArray { JObject.FromObject(reqHead.Rows[0].ItemArray
+                .Select((v, i) => new { k = reqHead.Columns[i].ColumnName, v })
+                .ToDictionary(x => x.k, x => x.v)) };
+
+            autoNumber.Init(headRows);
+            var poNo = autoNumber.GetValue();  // 例如 "PO202604-001"
+
+            // ===== 4. 組採購單抬頭 INSERT =====
+            var sqls = new List<string>();
+            sqls.Add($@"
+                INSERT INTO PURCHASE_ORDER 
+                    (PO_NO, SUPPLIER_ID, REQ_NO, CREATE_USER, CREATE_DATE, STATUS)
+                VALUES (
+                    {db.MarkValue((object)poNo)},
+                    {db.MarkValue(reqHead.Rows[0]["SUPPLIER_ID"])},
+                    {db.MarkValue((object)reqNo)},
+                    {db.MarkValue((object)ClientInfo.User)},
+                    {db.MarkValue((object)DateTime.Now.ToString("yyyyMMdd"))},
+                    'DRAFT'
+                )");
+
+            // ===== 5. 組採購單明細 INSERT（逐筆） =====
+            int seq = 1;
+            foreach (DataRow d in reqDetails.Rows)
             {
-                $"INSERT INTO ORDERS (ORDER_NO, CUSTOMER_ID, AMOUNT) VALUES ("
-                    + $"{db.MarkValue((object)orderNo)}, "
-                    + $"{db.MarkValue((object)input["CUSTOMER_ID"])}, "
-                    + $"{db.MarkValue((object)input["AMOUNT"])})"
-            };
+                sqls.Add($@"
+                    INSERT INTO PURCHASE_ORDER_DETAIL
+                        (PO_NO, SEQ_NO, ITEM_CODE, QTY, UNIT_PRICE, AMOUNT, REQ_NO, REQ_SEQ)
+                    VALUES (
+                        {db.MarkValue((object)poNo)},
+                        {db.MarkValue((object)(seq++).ToString())},
+                        {db.MarkValue(d["ITEM_CODE"])},
+                        {db.MarkValue(d["QTY"])},
+                        {db.MarkValue(d["UNIT_PRICE"])},
+                        {db.MarkValue(d["AMOUNT"])},
+                        {db.MarkValue((object)reqNo)},
+                        {db.MarkValue(d["SEQ_NO"])}
+                    )");
+            }
 
-            // AutoNumber 的回寫 SQL 一併加入
-            insertSqls.AddRange(autoNumber.GetSqls());
+            // ===== 6. 更新請購單狀態（樂觀鎖：WHERE STATUS=...）=====
+            sqls.Add($@"
+                UPDATE REQUISITION 
+                SET STATUS = 'TRANSFERRED',
+                    PO_NO = {db.MarkValue((object)poNo)},
+                    TRANSFER_DATE = {db.MarkValue((object)DateTime.Now.ToString("yyyyMMdd"))}
+                WHERE REQ_NO = {db.MarkValue((object)reqNo)}
+                  AND STATUS <> 'TRANSFERRED'");
 
-            // 執行並啟用影響筆數檢查（樂觀鎖必要）
-            db.ExecuteNonQuery(insertSqls, new UpdateOptions { RowsAffectCheck = true });
+            // ===== 7. AutoNumber 回寫 SYSAUTONUM =====
+            sqls.AddRange(autoNumber.GetSqls());
+
+            // ===== 8. 執行（RowsAffectCheck 讓 UPDATE 0 筆時拋錯，保障樂觀鎖）=====
+            db.ExecuteNonQuery(sqls, new UpdateOptions { RowsAffectCheck = true });
 
             db.Transaction.Commit();
-            return new { orderNo };
+            return new { poNo, reqNo, detailCount = reqDetails.Rows.Count };
         }
         catch
         {
@@ -310,6 +366,15 @@ public object 建立訂單(JObject input)
     }
 }
 ```
+
+**這個範例示範的重點**：
+
+- AutoNumber 取號、新表 INSERT、舊表 UPDATE、SYSAUTONUM 回寫 **全部在同一 Transaction**
+- `RowsAffectCheck = true` 同時保護兩件事：
+  - SYSAUTONUM 樂觀鎖（防號碼重複）
+  - 請購單狀態樂觀鎖（`STATUS <> 'TRANSFERRED'` 防重複轉單）
+- 業務檢核（已轉採購、無明細）在 Transaction 開始後、SQL 執行前先 throw，避免做無用功
+- 若 AutoNumber 的 `OnGetFixed` 事件需要用請購單的資料（如客戶編號），透過 `Init(headRows)` 傳入即可在事件中用 `rows[0].CUSTOMER_ID` 存取
 
 ### 情境 3：批次取多個號
 
