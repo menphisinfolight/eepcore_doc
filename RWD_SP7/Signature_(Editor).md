@@ -154,6 +154,59 @@ function downloadSignature() {
 }
 ```
 
+### 實務驗證：避免「單點擊也算有簽名」
+
+`required: true` 和 `isModified()` 都不能擋「單點擊」— 只要螢幕被碰一下，getValue 就會回傳有內容的 base64。
+
+簡單可靠的做法是**直接判斷 base64 長度**：
+
+| 情境 | `getValue()` 長度（大致） |
+|------|--------------------------|
+| 完全沒簽 | `''` 或非常短（< 100） |
+| 單點擊 / 誤觸 | ~ 200-400 |
+| 真正一筆完整簽名 | 1000+ |
+| 完整中文姓名 | 2000+ |
+
+#### 基本版（單一門檻）
+
+```javascript
+function dfMaster_onApply() {
+    var sig = $('#dfMaster_SIGNATURE').signature('getValue') || '';
+
+    // 500 為經驗值，代表至少一筆完整簽名
+    // 日後可依實際客戶情況調整（嚴格場景可調高到 1000）
+    if (sig.length < 500) {
+        $.alert('請完整簽名', 'warning');
+        return false;  // 阻止送出
+    }
+    return true;
+}
+```
+
+#### 兩層版（區分「沒簽」與「簽得太簡略」）
+
+```javascript
+function dfMaster_onApply() {
+    var sig = $('#dfMaster_SIGNATURE').signature('getValue') || '';
+
+    // 100 = 完全沒簽或誤觸的基本長度（約一個 M 指令）
+    if (sig.length < 100) {
+        $.alert('尚未簽名', 'warning');
+        return false;
+    }
+
+    // 500 為經驗值，簽名太簡略時給出警告但允許使用者確認後繼續
+    // 日後可依實際客戶情況調整（嚴格場景可調高到 1000）
+    if (sig.length < 500) {
+        if (!confirm('簽名似乎太過簡略，確定送出嗎？')) return false;
+    }
+
+    return true;
+}
+```
+
+> 這個閾值是客戶現場實務調整出來的經驗值。若需更精確的檢測（筆畫數、繪圖指令、外框尺寸），可以解碼 SVG 做細部分析，但多數情境下**長度判斷已足夠**且實作最簡單。
+
 ## 備註
 
 - 渲染為 `<input>` 加上 `bootstrap-signature` CSS 類別。
