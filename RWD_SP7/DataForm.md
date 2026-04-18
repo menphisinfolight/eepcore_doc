@@ -507,18 +507,128 @@ window.top.postMessage({
 }, '*');
 ```
 
+### 13. `form('open', ...)` 完整參數（Dialog 模式啟動）
+
+> 來源：討論區 [#482483](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482483)
+
+在 DataGrid ToolItem 或其他位置要「程式化」開啟一個 `Mode=Dialog` 的 DataForm 時，必須帶齊必要參數，否則會比原生按鈕缺欄位：
+
+```javascript
+// 直接開到新增狀態
+$('#dfMaster').form('open', {
+    row:    { '編號': '自動編號' },  // 初始值（新增時的預填）
+    status: 'inserted',             // view / inserted / updated
+    keys:   '編號'                  // Key 欄位名稱（updated 時需鎖住）
+});
+
+// 既有資料 → 編輯狀態（兩階段：open + setWhere 等資料載入、再改 status）
+$('#DataForm1').form('open', {
+    row: { 編號: '' },
+    keys: '編號'
+});
+$('#DataForm1').form('setWhere', "編號='" + value + "'");
+setTimeout(function () {
+    $('#DataForm1').form('status', 'updated');
+}, 300);  // 等 setWhere 的 reload 完成
+```
+
+`open` 完整接受的屬性：
+
+| 屬性 | 類型 | 說明 |
+|------|------|------|
+| `row` | Object | 預填資料列 |
+| `status` | string | `view` / `inserted` / `updated` |
+| `keys` | string | Key 欄位名稱（逗號分隔） |
+| `parentRow` | Object | 主表的一列（明細表在 Dialog 模式下需要帶） |
+| `onLoadDetail` | Function | 明細載入後的 callback |
+
+### 14. 明細 DataGrid 加總自動同步到主表 DataForm
+
+> 來源：討論區 [#482366](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482366) / [#482217](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482217)
+
+**情境**：明細 Grid 的某欄異動 → 主表 DataForm 的加總欄位要即時更新。
+
+**解法**：不需要寫 JS 手動加總。只要：
+
+1. 明細 DataGrid 該欄位的 **`Total` 屬性設為 `sum`**
+2. 主表 DataForm 有**同名欄位**
+3. 系統會自動把明細的 Footer 合計寫到主表對應欄位
+
+```javascript
+// 明細欄位設定（JSON）
+{
+    "field": "AMOUNT",
+    "title": "金額",
+    "total": "sum",   // ← 關鍵
+    "format": "N0"
+}
+```
+
+### 15. 自訂 DataForm 用 modal('show') 顯示
+
+> 來源：討論區 [#481667](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481667)
+
+若設計介面上的 DataForm 不是由 DataGrid 觸發、而是要**自己在別處開啟**，可以直接用 Bootstrap modal API：
+
+```javascript
+// 顯示自訂的 DataForm modal
+$('#AllSetup').modal('show');
+$('#AllSetup').modal('hide');
+
+// 開啟後以 setWhere 指定要顯示哪一筆（預設進 view 狀態）
+$('#AllSetup').form('setWhere', "員工編號 = '002'");
+
+// 若要直接進編輯：setWhere → setTimeout → status('updated')（見第 13 點）
+```
+
+**與 `form('open')` 的差別**：
+
+- `modal('show')` — 純 Bootstrap 顯示命令，不會觸發 DataForm 的初始化流程
+- `form('open')` — 會完整觸發 `loadRow` / `loadDetail` / `status` / `onShowTitle` / `onLoad` / `onFlowLoad` 等事件
+
+想要完整觸發事件，用 `form('open')`；只是要顯示已由其他機制載好資料的 form，用 `modal('show')`。
+
 ### 常見陷阱
 
 | 陷阱 | 說明 | 解法 |
 |------|------|------|
 | **`getRow` 拿不到某欄位值** | 該欄位元件類型未註冊在 form 內部的 collector | 用 `$('#dfMaster_XXX').xxx('getValue')` 直接拿 |
 | **`setWhere` 後沒刷新** | `setWhere` 內部會 reload，若又手動 reload 會送兩次 | 不要再手動呼叫 reload |
+| **`setWhere` 是非同步，接著 `edit_row` 用到舊資料** | `setWhere` 觸發的 reload 還沒完成就 edit_row | 用 `setTimeout` 延遲 300ms 左右等資料載入。來源：[#482053](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482053) |
+| **`onApplied` 內 `return false` 無效 / 導致異常** | `onApplied` 時機點框架不接收回傳值 | 不要在 `onApplied` 寫 return。來源：[#482366](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482366) |
 | **`status('view')` 後 required 紅字沒消失** | 狀態切換會刷新 label 樣式但 refval 特殊處理 | 檢查 refval 是否有 `columnMatchs` 導致 blur 連鎖觸發 |
 | **`insert_row` 後欄位預設值沒填入** | 需要 Default 元件同 Container 且 `BindingObject = form.Id` | 確認 Default 元件的 `bindingObject` 屬性 |
 | **`delete_row` 按下沒反應** | `onDelete` 或 `onFlowDelete` 回傳 false 中斷 | 檢查事件程式 |
 | **關聯 Grid 找不到** | `getViewGrid` 依 `editForm = {本 form id}` 比對 | 檢查 DataGrid 的 `editForm` 屬性 |
 | **Key 欄位編輯時仍可改** | `status` 為 `inserted` 時 key 可編、`updated` 才鎖 | 用 edit_row 觸發就會正確鎖定 |
 | **Tab 模式 close 後回到原頁面沒更新** | 沒呼叫 `refreshTabGrid` | 存檔 / 刪除後呼叫它 |
+| **DataPanel 欄位隱藏時連帶前一欄一起消失** | `.parent().parent().hide()` 多抓了一層 | 一層 `.parent().hide()` 就夠。來源：[#482509](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482509) |
+| **自訂 ToolItem 按鈕只在 view 狀態顯示** | 修改狀態下系統會隱藏非預期的 ToolItem | 需改底層 `refreshPagination` 加 OR 條件（升級會被覆蓋，需記錄）。來源：[#481937](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481937) / [#481830](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481830) |
+
+## 架構建議：主明細 Key 關聯用 `infoDataSource`（不要用 onblur submit）
+
+> 來源：討論區 [#482440](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482440)
+
+常見需求：主表 DataForm 有自動編號欄位，明細表的 KEY 欄位要自動帶入主表編號。
+
+**不建議的做法（前端硬串）**：
+```javascript
+// ❌ 在主表欄位 onblur 觸發 submit、讀 Identity、再 reload
+$('#dfMaster_編號').on('blur', function() {
+    $('#dfMaster').form('submit');
+    // 再想辦法撈 Identity、reload...
+});
+```
+
+問題：主從存檔邏輯混亂、明細被迫 autoApply、錯誤處理複雜。
+
+**建議的做法（server 端 infoDataSource）**：
+
+1. 在 server 端設計 `infoDataSource` 設定主明細關聯
+2. 關聯欄位用 `ParentValues` 自動帶入
+3. 存檔時系統會：主表先存 → 取回 Identity → 自動寫入明細的關聯欄位 → 明細一併存
+
+明細的 autoApply 保持 false，**整個主從作為一個 Transaction**。
 
 ## 前端行為（JavaScript）
 
