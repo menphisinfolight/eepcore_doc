@@ -153,7 +153,7 @@ value = btoa(unescape(encodeURIComponent(value)));
 
 ## 相關討論區（完整彙整）
 
-討論區從 2022 到 2026 共有 **26 篇**相關紀錄，以下按語系 / 主題分組。
+討論區從 2022 到 2026 共有 **32 篇**相關紀錄，以下按語系 / 主題分組。
 
 ### 日文相關
 
@@ -200,12 +200,25 @@ value = btoa(unescape(encodeURIComponent(value)));
 | [#467923](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=467923) | 2022-11-22 | 存檔時特殊字元出現「不是有效的內容」 | |
 | [#467225](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=467225) | 2022-08-11 | 輸入其他語言 | 多語系通用問題 |
 
+### 錯誤訊息「不是有效的內容」觸發情境
+
+前端觸發 validateXss 時的**使用者可見提示**就是「不是有效的內容」，下列篇章都是同一個根因但不同觸發場景：
+
+| ID | 日期 | 觸發場景 | 官方回覆 |
+|----|------|----------|----------|
+| [#482514](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482514) | 2026-03-26 | 特殊符號 `°`（度） | 關 validateXss；**首次提到「可透過 `EEPWebClient.Core/wwwroot/js/infolight` 自行調整白名單」** |
+| [#481105](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481105) | 2025-07-29 | 資料類型為 HTML 存檔 | 關 validateXss |
+| [#473913](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473913) | 2024-04-19 | `#AE` 欄位保存 | Server + DataGrid 雙邊關 |
+| [#473030](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473030) | 2023-12-20 | 欄位夾雜注音符號（`ㄅㄆㄇ`） | 雙邊關 |
+| [#467068](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=467068) | 2022-07-15 | HtmlEditor 輸入 HTML 標籤 | HtmlEditor 本質要存 `<html>` 標籤，不能開 validateXss |
+| [#466634](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=466634) | 2022-05-03 | 存檔時直接顯示「不是有效的內容」 | 預設啟用 validateXss 的說明 |
+
 ### 歷史脈絡觀察
 
 1. **2022 年**多為越南文客戶（薩摩亞商旺隆、炫佳）集中回報，官方提供**替換 Provider 檔**的解法（舊版機制）
-2. **2023 年**轉為一般特殊字元 / 符號問題，官方建議改用 `validateXss: false` + ReadMe 文件宣導
+2. **2023 年**轉為一般特殊字元 / 符號 / 注音問題，官方建議改用 `validateXss: false` + ReadMe 文件宣導
 3. **2024 年**出現 **全域覆寫 `$.validateScript`** 的方案（#473697），適用於系統公版頁
-4. **2025-2026 年**問題仍持續（日文、越南文新客戶），**根本解法（擴充白名單）仍未進入官方版本**
+4. **2025-2026 年**問題仍持續（日文、越南文新客戶），**#482514（2026-03）首次官方提到「自行調整白名單」**（即本文件建議的方向），但仍無官方標準做法或 config 機制
 
 ### 建議
 
