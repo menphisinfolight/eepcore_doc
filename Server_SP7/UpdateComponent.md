@@ -555,6 +555,324 @@ catch (Exception ex) {
 ]
 ```
 
+## `throw` 中止整個 Transaction
+
+事件中用 `throw` 可以**中止整批存檔**（無論主檔還是明細，無論哪個事件時機點）。
+
+### 規則
+
+| 項目 | 說明 |
+|------|------|
+| **Rollback 範圍** | 整個 Transaction 的所有 SQL 都會 Rollback（主表、明細、TRS、AutoNumber 全部退回） |
+| **throw 類別** | 用 `throw new EEPException("訊息")`，前端會友善顯示訊息 |
+| **用 `throw new Exception`** | 前端會當成「系統錯誤」顯示，訊息可能被框架吃掉或顯示外層錯誤（見 [#469106](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469106)） |
+| **`onAfterApplied` 是否觸發** | ❌ 不會（Commit 失敗，Commit 之後的 hook 都不跑） |
+| **`onBeforeApply` 無 `return false`** | 它是 `void` 方法，要中止**只能 `throw`** |
+
+### 範例：業務檢核失敗中止存檔
+
+```csharp
+public void uc訂單_onBeforeApply(object sender, dynamic rows, List<string> sqls)
+{
+    var inserted = rows["inserted"] as JArray;
+    if (inserted.Count == 0) return;
+
+    foreach (JObject row in inserted)
+    {
+        // 檢查庫存
+        var db = (sender as UpdateComponent).Module.DbHelper;
+        var dt = db.ExecuteDataTable(
+            $"SELECT STOCK FROM PRODUCT WHERE ITEM_ID = {MarkValue(row["ITEM_ID"])}");
+        if (dt.Rows.Count == 0)
+            throw new EEPException($"商品 {row["ITEM_ID"]} 不存在");
+
+        if (Convert.ToInt32(dt.Rows[0]["STOCK"]) < (int)row["QTY"])
+            throw new EEPException($"商品 {row["ITEM_ID"]} 庫存不足");
+    }
+}
+```
+
+### 與 `return false` 的差異
+
+| 動作 | `return false` | `throw` |
+|------|----------------|---------|
+| 適用事件 | `onBefore*`（bool 回傳值的） | 任何事件 |
+| 影響範圍 | **單筆跳過**（其他筆仍正常執行） | **整批 Rollback** |
+| 前端提示 | 無（需自行寫 alert） | 自動顯示 EEPException 訊息 |
+| `onAfterApplied` | 仍觸發（視其他筆是否成功） | 不觸發 |
+
+## ValidateXss 允許字元完整規則
+
+> 原始碼：`EEPServerTools.Core/Components/UpdateComponent.cs:528` 與 `EEPWebClient.Core/wwwroot/js/infolight/jquery.infolight.validate.js:5`
+
+前後端用**完全相同的 regex**：
+
+```
+^[\u4e00-\u9fa5_\uff00-\uffff_a-zA-Z0-9_`~!@#$%^&*()_\-+=?:"{}|,./;'\\[\]·~！@#￥%……&*（）——\-+={}|《》？：""【】、；''，。、\s]+$
+```
+
+### 允許
+
+| 範圍 | 說明 |
+|------|------|
+| `\u4e00-\u9fa5` | 中日韓統一表意文字（基本漢字區） |
+| `\uff00-\uffff` | 全形符號與字母（全形英數、全形標點、片假名半形等） |
+| `a-zA-Z0-9` | 英數 |
+| 半形符號 | `` ` ~ ! @ # $ % ^ & * ( ) _ - + = ? : " { } \| , . / ; ' \ [ ] `` |
+| 全形標點 | `· ～ ！ @ # ￥ % …… & * （ ） —— = { } \| 《 》 ？ ： " " 【 】 、 ； ' ' ， 。` |
+| `\s` | 空白字元 |
+
+### 禁止（會被擋的常見字元）
+
+| 字元 | 來源 | 客戶常見情境 |
+|------|------|--------------|
+| **越南文帶聲調**（ă â đ ê ô ơ ư 等） | U+0100-U+024F 拉丁擴充 | 越南客戶 |
+| **泰文** | U+0E00-U+0E7F | 泰國客戶 |
+| **韓文**（注音/半形韓） | U+AC00-U+D7AF 不完全在允許範圍 | 韓國客戶 |
+| **阿拉伯文、西里爾文** 等 | U+0600+ / U+0400+ | 少見 |
+| **部分拉丁變音** (ñ ü é ç 等) | U+00C0-U+017F | 西班牙/法文客戶 |
+| **Emoji** | U+1F000+ | 社群類系統 |
+| `< > &` | 禁止 | 任何場景 |
+
+### 解法（前面章節已提）
+
+- 單元件關：`validateXss: false`（DataGrid + UpdateComponent 都要）
+- 全域覆寫：主頁原始碼注入 `$.validateScript = v => v`
+- 客製白名單：直接改 `jquery.infolight.validate.js` 的 regex，**升級會被蓋**，記錄位置
+
+### Server 端失敗訊息
+
+驗證失敗會拋 `Exception`（非 `EEPException`），訊息格式為 `validateXss:{值}`。前端會攔截並轉成友善訊息（`$.fn.locale.validateXss`）。
+
+## `UpdateIfExists` 的事件路由
+
+啟用 `UpdateIfExists`（即「INSERT 時若主鍵已存在則改 UPDATE」）時，**事件路由會變**：
+
+| 情境 | 觸發事件 |
+|------|----------|
+| INSERT + 主鍵不存在 | `onBeforeInsert` → `onAfterInsert` |
+| **INSERT + 主鍵已存在（自動改 UPDATE）** | **`onBeforeUpdate` → `onAfterUpdate`**（不是 Insert 事件） |
+| UPDATE | `onBeforeUpdate` → `onAfterUpdate` |
+| DELETE | `onBeforeDelete` → `onAfterDelete` |
+
+### 容易踩的坑
+
+假設 `onBeforeInsert` 設定建立日期，`onBeforeUpdate` 設定修改日期：
+
+```csharp
+public bool uc_onBeforeInsert(object sender, dynamic row, List<string> sqls)
+{
+    row.CREATE_DATE = DateTime.Now.ToString("yyyyMMdd");
+    return true;
+}
+
+public bool uc_onBeforeUpdate(object sender, dynamic row, List<string> sqls)
+{
+    row.MODIFY_DATE = DateTime.Now.ToString("yyyyMMdd");
+    return true;
+}
+```
+
+若啟用 `UpdateIfExists`，**使用者以為是新增的資料**（前端按新增），但後端發現主鍵已存在→走 Update 路徑→**`CREATE_DATE` 不會被設**。
+
+### 應對方式
+
+在 `onBeforeUpdate` 內也補處理：
+
+```csharp
+public bool uc_onBeforeUpdate(object sender, dynamic row, List<string> sqls)
+{
+    // 若 CREATE_DATE 空白（表示這筆其實是 UpdateIfExists 轉來的新記錄）
+    if (string.IsNullOrEmpty((string)row.CREATE_DATE))
+        row.CREATE_DATE = DateTime.Now.ToString("yyyyMMdd");
+    row.MODIFY_DATE = DateTime.Now.ToString("yyyyMMdd");
+    return true;
+}
+```
+
+或在 `onBeforeApply` 集中處理（不區分 Insert/Update）。
+
+## 事件方法沒執行的檢查清單
+
+客戶常卡在「我寫了事件，為什麼沒跑」。90% 是以下原因：
+
+| 檢查項 | 說明 |
+|--------|------|
+| **拼字** | `_onBeforUpdate` / `_onBeforeupdate` / `_OnBeforeUpdate` 都會失敗 |
+| **方法可見度** | 必須 `public`，`private` / `internal` 都跑不到（反射限制） |
+| **參數簽名** | 必須是 `(object sender, dynamic row, List<string> sqls)`，少一個參數就找不到 |
+| **回傳型別** | Before 事件必須 `bool`，After 事件必須 `void` |
+| **所屬 class** | 必須寫在繼承 `DataModule` 的類別中（通常是 `design/server/{方案}/{模組名稱}.cs`） |
+| **設計介面欄位** | UpdateComponent 的 `onBeforeInsert` 等屬性欄要**填入方法名稱** |
+| **方法名稱前綴** | 通常是 `{updateComponentId}_onBefore...`，但實際上框架只比對**設計欄位中填的字串**與 C# 方法名稱 |
+| **Module.InvokeMethod 反射** | 以 reflection 呼叫，找不到時**靜默失敗**（不會報錯） |
+
+### 測試事件是否真的被呼叫
+
+最快的方法：在事件內加一行 throw：
+
+```csharp
+public bool uc_onBeforeInsert(object sender, dynamic row, List<string> sqls)
+{
+    throw new EEPException("測試：事件有跑到");
+    return true;
+}
+```
+
+若沒看到訊息 → 事件根本沒呼叫（檢查清單上的項目）。
+
+## SQL 最終執行順序
+
+`UpdateComponent.GetSqls()` 回傳 SQL 清單後，`DataModule.UpdateDataset()` 在 Transaction 中依下列順序執行（同一個 Transaction）：
+
+```
+[ Transaction 開始 ]
+1. onBeforeApply 事件產生的 SQL
+2. DELETE 明細（InfoDataSource 連動）
+3. DELETE 主表各列
+4. UPDATE 主表各列
+5. INSERT 主表各列
+6. AutoNumber.GetSqls()        ← SYSAUTONUM 回寫
+7. InfoTransaction.GetSqls()    ← TRS 過帳到目標表
+8. onAfterApply 事件產生的 SQL
+[ 全部成功 → Commit ]
+9. onAfterApplied 事件觸發（Commit 之後，不在 Transaction 內）
+```
+
+### 主明細架構時的完整順序
+
+多個 UpdateComponent（主檔 + 各層明細）各自呼叫 `GetSqls()` 後被 `UpdateDataset` 合併，大致順序：
+
+```
+Master: onBeforeApply → Delete → Update → Insert → AutoNumber → TRS → onAfterApply
+Detail: onBeforeApply → Delete → Update → Insert → AutoNumber → TRS → onAfterApply
+Detail2: ...
+[ Commit ]
+Master onAfterApplied
+```
+
+> Detail 層級的 `onAfterApplied` **不會觸發**（[#472657](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472657)）
+
+## 欄位寫入權限：`ReadOnly` / `insertEnable` / `updateEnable`
+
+三個獨立控制項共同決定欄位是否進 INSERT / UPDATE SQL。
+
+| 控制源 | 說明 |
+|--------|------|
+| **Schema ReadOnly** | 資料庫層面的唯讀欄位（例如 `int IDENTITY`、計算欄位）。`DbHelper.IsReadOnly(schemaTable, colName)` 自動偵測 |
+| **FieldAttr.insertEnable** | UpdateComponent 的邏輯控制，預設 `true`。設 `false` → INSERT 時跳過此欄位 |
+| **FieldAttr.updateEnable** | 同上，預設 `true`。設 `false` → UPDATE 時跳過此欄位 |
+
+### 優先順序
+
+**AND 關係**（要「全部允許」才寫入）：
+
+- INSERT 欄位: `!Schema.ReadOnly && FieldAttr.insertEnable`
+- UPDATE 欄位: `!Schema.ReadOnly && FieldAttr.updateEnable`
+
+### 常見用法
+
+- **Identity 欄位** — `Schema.ReadOnly = true`，自動跳過，**不需**再設 insertEnable
+- **外部表 JOIN 進來的欄位** — 設 `insertEnable = false` + `updateEnable = false`，只顯示不寫
+- **建立日期** — 設 `updateEnable = false` 防止 UPDATE 時被覆蓋（但 INSERT 時填入）
+- **修改日期** — 設 `insertEnable = false` + 預設 `defaultValue` 只在 Update 套用（或 DefaultMode=Update）
+
+## `ImportMode` 值清單
+
+`Options.ImportMode` 是字串，由前端在 Excel 匯入時設定。內建支援值：
+
+| 值 | 用法 |
+|----|------|
+| `""` / null | 一般前端提交（非匯入） |
+| `"replace"` | 匯入前先清空整個表（例如 `DELETE FROM USERS`）再逐筆 INSERT |
+| `"insert"` | 只新增；匯入檔中若主鍵已存在，**跳過更新**（在 `onBeforeUpdate` return false） |
+| `"update"`（約定俗成） | 只更新；新資料可在事件內自行判斷跳過 |
+| 其他任意字串 | 純粹給事件判斷用，框架不做特殊處理 |
+
+### 典型使用 pattern
+
+```csharp
+public void ucUser_onBeforeApply(object sender, dynamic rows, List<string> sqls)
+{
+    var uc = sender as UpdateComponent;
+    var mode = uc.Options.ImportMode;
+
+    if (string.IsNullOrEmpty(mode)) return;  // 非匯入情境不處理
+
+    if (mode == "replace")
+    {
+        // replace 模式：先清空
+        sqls.Add(uc.Module.DbHelper.GetDeleteAllSql("USERS"));
+    }
+    else
+    {
+        // insert / update / 其他：啟用 upsert 能力
+        uc.UpdateIfExists = true;
+    }
+}
+```
+
+## 明細 SQL 失敗的 Rollback 範圍
+
+**任一 SQL 失敗 → 整個 Transaction Rollback**。
+
+- 主檔已成功 INSERT、明細第 5 筆失敗 → 主檔 INSERT 也退回
+- AutoNumber 的 SYSAUTONUM 回寫失敗 → 業務表的資料也退回
+- TRS 目標表寫入失敗 → 原表的異動也退回
+
+**沒有**「部分成功」的模式。若需要「容錯匯入」（某筆失敗不影響其他），要在事件中用 `try-catch` 包單筆邏輯，自行決定是否 `throw`。
+
+## `_insertedRow` 與 Identity 取值
+
+### `_insertedRow`（內部欄位）
+
+記錄**最新一筆 INSERT 的主表 row**（不含 Detail，排除 `Options.IsDetail = true`）。用途：
+
+- **InfoTransaction** — TRS 取 `_insertedRow` 的 key 寫進 TargetTable
+- **InfoDataSource** — 主明細關聯時取主表剛 INSERT 的 key 填入 Detail 的 `ParentValues`
+
+### `GetInsertedValue(schemaTable, row, columnName)`
+
+從 SQL Server 的 `SCOPE_IDENTITY()` / Oracle 的 sequence 取回剛 INSERT 產生的自動值。**只在 INSERT 之後才有意義**。
+
+前端配合：主檔 `onApplied` reload DataGrid，系統自動把資料庫產生的 ID 帶回前端（[#470099](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=470099)）。
+
+## `TextTransform` 執行時機
+
+`TextTransform` 屬性（`None` / `Capitalize` / `Uppercase` / `Lowercase`）在 SQL 組裝**之前、事件之後**執行：
+
+```
+onBeforeInsert / onBeforeUpdate 事件
+  ↓
+TextTransform 套用（全欄位一次處理）
+  ↓
+FieldAttr.defaultValue 套用
+  ↓
+FieldAttr.trimLength 截斷
+  ↓
+FieldAttr.encryption 加密
+  ↓
+ValidateXss 驗證
+  ↓
+組 INSERT / UPDATE SQL
+```
+
+### 衝突情境
+
+若 `onBeforeInsert` 寫：
+```csharp
+row.NAME = row.NAME.ToString().ToUpper();  // 手動轉大寫
+```
+
+同時 UpdateComponent 設 `TextTransform = Capitalize`（首字母大寫）：
+
+- 事件先跑：`NAME = "ALICE"`
+- TextTransform 再跑：`NAME = "Alice"`
+
+**最終結果與事件寫的不同**。解法：
+- 事件不要做 TextTransform 已能做的事
+- 或關閉 TextTransform（設 `None`）改用事件手動控制
+
 ## 常見陷阱與限制（討論區彙整）
 
 | 陷阱 / 限制 | 說明 | 解法 | 來源 |
