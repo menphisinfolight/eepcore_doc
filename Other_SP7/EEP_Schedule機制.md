@@ -2,6 +2,29 @@
 
 > EEP 內建**兩套並行**的排程執行機制：獨立 exe（`Schedule.Core`）與 class library（`ScheduleHelper`）。兩者邏輯幾乎相同、讀同一張 DB 表、呼叫同一組方法，差別在於**部署方式**。
 
+## ⚠️ 最重要的前提：排程不會自動啟動
+
+**公版 EEP 安裝後，預設不會跑任何排程**。
+
+搜尋整個 `EEPWebClient.Core`（Web 主程式）原始碼：
+
+| 搜尋目標 | 結果 |
+|---------|------|
+| `ScheduleHelper` 是否被 Web 引用 | ❌ 無 |
+| `StartSchedule()` 是否被 Web 呼叫 | ❌ 無 |
+
+所以：
+
+| 情境 | 排程會跑嗎？ |
+|------|-------------|
+| 只裝 EEP（Web 跑起來）、沒做其他動作 | ❌ **不會** |
+| 部署並執行 `Schedule.Core.exe` | ✅ 會 |
+| 自行改 `EEPWebClient.Core/Program.cs` 加 `new ScheduleHelper().StartSchedule();` | ✅ 會 |
+
+**結論**：要用排程，**必須選一條路**。兩條都沒做 → SYS_SCHEDULE 裡的排程設定**完全不會執行**，也不會有任何錯誤訊息（因為根本沒有 process 在檢查）。
+
+這是容易誤解的地方 — 看到 SYS_SCHEDULE 表有資料就以為排程有在跑，但其實需要「**有人啟動機制**」才會有排程引擎。
+
 ## 兩種機制速覽
 
 | 項目 | 方式 A：`Schedule.Core.exe` | 方式 B：`ScheduleHelper` |
@@ -105,6 +128,18 @@ sc start "EEP Schedule"
 ### 檔案
 
 `EEPServerTools.Core/Utility/ScheduleHelper.cs` L15-303
+
+### ⚠️ 公版 Web 不會自動啟動
+
+這個 class 提供了 `StartSchedule()` API，**但預設沒有任何公版程式碼在呼叫它**：
+
+- `EEPWebClient.Core/Program.cs` — 不呼叫
+- `EEPWebClient.Core/Startup.cs` — 不呼叫
+- 任何公版 Controller / Middleware — 不呼叫
+
+所以只要沒客製、沒整合，單純跑 EEP 的 Web 應用**完全不會有排程行為**。使用者要用方式 B 的話，**必須自己改動原始碼**（或用包裝的方式）把 `StartSchedule()` 接上去。
+
+這是**客製 / 擴充行為**，不是公版行為。
 
 ### 關鍵 API
 
@@ -296,6 +331,8 @@ LogSchedule(startTime, row, result)
 
 | 陷阱 | 說明 | 對策 |
 |------|------|------|
+| **🔴 以為裝好 Web 就會跑排程** | 公版 Web 不會自動啟動 ScheduleHelper，沒有任何公版程式碼呼叫 StartSchedule | 部署 Schedule.Core.exe，或自行改 Program.cs 加 StartSchedule |
+| **排程設定建好了但沒動靜** | SYS_SCHEDULE 表有資料 ≠ 排程會跑；要有 process 在檢查才行 | 檢查是否有 Schedule.Core.exe 在執行，或 Web 有無自訂 StartSchedule |
 | **雙軌邏輯分歧** | `Program.cs` 與 `ScheduleHelper.cs` 幾乎複製貼上，改一邊忘另一邊 | 改排程邏輯時兩個檔都要改 |
 | **多 instance Web 啟用 ScheduleHelper** | 每個 node 都跑，任務被執行 N 次 | 只在一台 node 啟動，或轉用 Schedule.Core.exe |
 | **`LastTime` 是 static** | 同 process 不要 `new ScheduleHelper()` 多次 | 啟動期只 new 一個 |
