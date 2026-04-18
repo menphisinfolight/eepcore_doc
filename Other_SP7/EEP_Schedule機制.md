@@ -355,11 +355,47 @@ LogSchedule(startTime, row, result)
 
 實際執行仍需要 **Schedule.Core.exe** 或 **ScheduleHelper**。
 
+## 開發/偵錯體驗差異（實務重點）
+
+這是選擇兩種方式時**最常被忽略但最影響工程效率**的一點。
+
+### 方式 A（`Schedule.Core.exe`）的偵錯痛點
+
+| 問題 | 細節 |
+|------|------|
+| **斷點難接** | 獨立 process，VS/VSCode 要 `Attach to Process` 選 `Schedule.Core.exe`，且要確保 debug symbol 已載入。包 Windows Service 後更麻煩（Service 起來的 process 非互動登入） |
+| **熱重載無效** | 改 ServerMethod 程式碼要重 build Schedule.Core + 重啟 exe，才會載入新 assembly（因為 `WebSitePath` 指向的是 publish 後的目錄） |
+| **Console log 可視性差** | 只有 stdout/stderr；包 Service 後要額外重導向到檔案 |
+| **例外堆疊追蹤難** | 例外被 LogError 吃掉只留 Message，沒有完整 StackTrace；要改程式加 log 或 attach debugger |
+| **與 Web 不同 process 的快取差異** | Web 改過的資料、Session、記憶體快取都看不到 |
+
+實務上客戶回報「排程跑出來結果不對」時，用方式 A 要花很多時間才能定位問題（通常最後都還是改成方式 B 才 debug 完）。
+
+### 方式 B（`ScheduleHelper` 嵌 Web）的偵錯優勢
+
+| 優點 | 細節 |
+|------|------|
+| **與 Web 同 process 同 debugger** | F5 起 Web 就同時帶起排程，斷點直接可用 |
+| **Server Method 可單步執行** | 從 `Invoke` → `CallMethod` → 進入 Module 的 C# 方法，VS 一路 Step In |
+| **熱重載更有效** | `dotnet watch run` 或 Hot Reload 改完即時重載（排程也一起更新） |
+| **log 與 Web 共用 appsettings 設定** | 可輕鬆整合進 Serilog / Application Insights |
+| **快取 / Session 可共用** | 若 ServerMethod 依賴快取或靜態變數，Web 剛寫入的資料排程可讀到 |
+
+### 建議
+
+- **開發 / 測試階段**：**強烈建議用方式 B**（取消 Startup.cs 註解），偵錯時間少一半以上
+- **正式環境**：視需求選
+  - 小型部署：方式 B 夠用（Web 吃資源通常不算重）
+  - 大型 / 跨機器 / 穩定性要求高：方式 A 隔離部署（但排程邏輯或 ServerMethod 若要 debug，**先在開發環境用方式 B 驗證完**再進正式）
+
+> 實務流程：開發用方式 B → 功能驗證完 → 正式環境若採方式 A，只是換部署方式，排程邏輯本身已經 debug 過了。
+
 ## 兩種方式的選擇建議
 
 | 情境 | 建議 |
 |------|------|
-| 單一伺服器、省部署 | **方式 B（ScheduleHelper + BackgroundService）** 嵌入 Web |
+| **開發 / 測試階段** | **方式 B（強烈建議）** — exe 無法便利偵錯 |
+| 單一伺服器、省部署 | **方式 B**（ScheduleHelper + BackgroundService）嵌入 Web |
 | 大量/長時間排程任務，不想影響 Web | **方式 A（Schedule.Core.exe）** 獨立部署 |
 | 有專用整合服務容器 | **方式 B**，自訂 host 包 ScheduleHelper |
 | 跨伺服器負載平衡（Web 集群） | **方式 A 單機啟動**，避免集群每個 node 都跑一份重複執行 |
@@ -373,6 +409,7 @@ LogSchedule(startTime, row, result)
 |------|------|------|
 | **🔴 以為裝好 Web 就會跑排程** | 公版 Web 不會自動啟動 ScheduleHelper（Startup.cs 啟動碼預設註解） | 部署 Schedule.Core.exe，或取消 Startup.cs 中的註解 |
 | **排程設定建好了但沒動靜** | SYS_SCHEDULE 表有資料 ≠ 排程會跑；要有 process 在檢查才行 | 檢查是否有 Schedule.Core.exe 在執行，或 Web 有無自訂 StartSchedule |
+| **🔴 用 Schedule.Core.exe 無法偵錯** | 獨立 process，斷點難接、熱重載無效、Console log 可視性差、例外堆疊被吃掉 | 開發/測試階段改用方式 B（Startup.cs 取消註解），驗證完再進正式 |
 | **雙軌邏輯分歧** | `Program.cs` 與 `ScheduleHelper.cs` 幾乎複製貼上，改一邊忘另一邊 | 改排程邏輯時兩個檔都要改 |
 | **多 instance Web 啟用 ScheduleHelper** | 每個 node 都跑，任務被執行 N 次 | 只在一台 node 啟動，或轉用 Schedule.Core.exe |
 | **`LastTime` 是 static** | 同 process 不要 `new ScheduleHelper()` 多次 | 啟動期只 new 一個 |
