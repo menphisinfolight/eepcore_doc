@@ -237,7 +237,7 @@ function buildSidebar() {
 }
 
 // Load and render markdown
-async function loadPage(name) {
+async function loadPage(name, section) {
   const content = document.getElementById('md-content');
   content.innerHTML = '<div class="loading">載入中...</div>';
 
@@ -272,9 +272,15 @@ async function loadPage(name) {
     }
 
     document.getElementById('content').scrollTop = 0;
-    history.replaceState(null, '', `#${name}`);
+    history.replaceState(null, '', `#${name}${section ? '::' + encodeURIComponent(section) : ''}`);
     document.title = `${name} — EEP Core Server 元件`;
     document.getElementById('sidebar').classList.remove('show');
+    if (section) {
+      setTimeout(() => {
+        const el = document.getElementById(decodeURIComponent(section));
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
   } catch (e) {
     content.innerHTML = `<p>無法載入 Server_SP7/${name}.md：${e.message}</p>`;
   }
@@ -289,7 +295,7 @@ function buildTOC() {
     const id = h.id || h.textContent.trim().replace(/\s+/g, '-').toLowerCase();
     h.id = id;
     const cls = h.tagName === 'H3' ? 'h3' : '';
-    html += `<a class="${cls}" href="javascript:void(0)" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth'})">${h.textContent}</a>`;
+    html += `<a class="${cls}" href="javascript:void(0)" onclick="scrollToSection('${id}')">${h.textContent}</a>`;
   });
   links.innerHTML = html;
 }
@@ -311,12 +317,19 @@ document.getElementById('search-box').addEventListener('input', function() {
 
 // Init
 buildSidebar();
-const hash = location.hash.replace('#', '') || 'Server元件列表';
-loadPage(hash);
+const _h = parseHash(location.hash);
+loadPage(_h.page || 'Server元件列表', _h.section);
 
 window.addEventListener('hashchange', () => {
-  const name = location.hash.replace('#', '');
-  if (name) loadPage(name);
+  const h = parseHash(location.hash);
+  if (!h.page) return;
+  const cur = document.querySelector('.nav-item.active');
+  const curName = cur ? cur.dataset.name : '';
+  if (h.page === curName && h.section) {
+    scrollToSection(h.section);
+  } else {
+    loadPage(h.page, h.section);
+  }
 });
 </script>
 </body>

@@ -176,7 +176,7 @@ function buildSidebar() {
     g.items.forEach(([name, desc]) => { html += `<a class="nav-item" data-name="${name}" href="#${name}" onclick="loadPage('${name}')"><span class="table-name">${name}</span> <span class="table-desc">${desc}</span></a>`; });
     html += '</div></div>'; }); nav.innerHTML = html;
 }
-async function loadPage(name) {
+async function loadPage(name, section) {
   const content = document.getElementById('md-content');
   content.innerHTML = '<div class="loading">載入中...</div>';
   try {
@@ -187,21 +187,52 @@ async function loadPage(name) {
     buildTOC();
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     const active = document.querySelector(`.nav-item[data-name="${name}"]`); if (active) { active.classList.add('active'); active.scrollIntoView({ block: 'nearest' }); }
-    document.getElementById('content').scrollTop = 0; history.replaceState(null, '', `#${name}`);
+    document.getElementById('content').scrollTop = 0; history.replaceState(null, '', `#${name}${section ? '::' + encodeURIComponent(section) : ''}`);
     document.title = `${name} — EEP Core 系統資料表`; document.getElementById('sidebar').classList.remove('show');
+    if (section) {
+      setTimeout(() => {
+        const el = document.getElementById(decodeURIComponent(section));
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
   } catch (e) { content.innerHTML = `<p>無法載入 ${MD_DIR}${name}.md：${e.message}</p>`; }
 }
 function buildTOC() {
   const headings = document.querySelectorAll('#md-content h2, #md-content h3'); const links = document.getElementById('toc-links'); let html = '';
   headings.forEach(h => { const id = h.id || h.textContent.trim().replace(/\s+/g, '-').toLowerCase(); h.id = id; const cls = h.tagName === 'H3' ? 'h3' : '';
-    html += `<a class="${cls}" href="javascript:void(0)" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth'})">${h.textContent}</a>`; }); links.innerHTML = html;
+    html += `<a class="${cls}" href="javascript:void(0)" onclick="scrollToSection('${id}')">${h.textContent}</a>`; }); links.innerHTML = html;
 }
 document.getElementById('search-box').addEventListener('input', function() {
   const q = this.value.toLowerCase(); document.querySelectorAll('.nav-item').forEach(el => { const name = el.dataset.name.toLowerCase(); const desc = el.querySelector('.table-desc').textContent.toLowerCase(); el.classList.toggle('hidden', q && !name.includes(q) && !desc.includes(q)); });
   document.querySelectorAll('.nav-group').forEach(g => { const hasVisible = g.querySelector('.nav-item:not(.hidden)'); g.style.display = hasVisible ? '' : 'none'; if (q) g.classList.add('open'); });
 });
-buildSidebar(); const hash = location.hash.replace('#', '') || 'index'; loadPage(hash);
-window.addEventListener('hashchange', () => { const name = location.hash.replace('#', ''); if (name) loadPage(name); });
+
+function parseHash(h) {
+  const s = decodeURIComponent((h || '').replace(/^#/, ''));
+  const idx = s.indexOf('::');
+  if (idx < 0) return { page: s, section: '' };
+  return { page: s.slice(0, idx), section: s.slice(idx + 2) };
+}
+function scrollToSection(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const cur = parseHash(location.hash);
+  if (cur.page) history.replaceState(null, '', `#${encodeURIComponent(cur.page)}::${encodeURIComponent(id)}`);
+}
+
+buildSidebar(); const _h = parseHash(location.hash);
+loadPage(_h.page || 'index', _h.section);
+window.addEventListener('hashchange', () => {
+  const h = parseHash(location.hash);
+  if (!h.page) return;
+  const cur = document.querySelector('.nav-item.active');
+  const curName = cur ? cur.dataset.name : '';
+  if (h.page === curName && h.section) {
+    scrollToSection(h.section);
+  } else {
+    loadPage(h.page, h.section);
+  }
+});
 </script>
 </body>
 </html>
