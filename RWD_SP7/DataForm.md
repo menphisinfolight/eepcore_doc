@@ -271,6 +271,255 @@ if (status === 'insert') {
 return title;
 ```
 
+## JavaScript API 操作範例
+
+前面「前端使用範例」章節介紹的是事件 hook 的寫法。本節示範**從外部或其他事件主動呼叫 DataForm API** 的實戰 pattern，例如在按鈕點擊、父表選列、或另一個 Tab 的 postMessage 中操作 DataForm。
+
+### 1. 取值 / 設值
+
+```javascript
+// 取目前整筆 row（從表單各欄位收集）
+var row = $('#dfMaster').form('getRow');
+console.log(row.USER_CODE, row.USER_NAME);
+
+// 排除某些型別欄位（例如排除 refval）
+var row = $('#dfMaster').form('getRow', ['refval', 'fileupload']);
+
+// 取/設單一欄位（依欄位類型使用對應 API）
+$('#dfMaster_USER_CODE').textbox('getValue');
+$('#dfMaster_USER_NAME').textbox('setValue', 'Alice');
+$('#dfMaster_DEPT').combobox('setValue', 'HR');
+$('#dfMaster_BIRTH').datebox('setValue', '2026/04/17');
+
+// 整個 row 回填（會呼叫所有欄位的 setValue）
+$('#dfMaster').form('loadRow', {
+    USER_CODE: 'U001',
+    USER_NAME: 'Alice',
+    DEPT: 'HR',
+    BIRTH: '2026/04/17'
+});
+
+// 清空整個表單
+$('#dfMaster').form('clear');
+```
+
+### 2. 程式化觸發 CRUD 操作
+
+```javascript
+// 新增
+$('#dfMaster').form('insert_row');    // 觸發 onLoad（empty row），設 status='inserted'
+
+// 編輯
+$('#dfMaster').form('edit_row');      // 從 ViewGrid 選列載入，設 status='updated'
+
+// 送出儲存
+$('#dfMaster').form('submit');
+
+// 刪除（含確認對話框 + 送後端）
+$('#dfMaster').form('delete_row');
+
+// 取消（等同 reload 當前頁）
+$('#dfMaster').form('cancel');
+
+// 關閉表單（Panel→closeCurrentTab / Dialog→modal hide）
+$('#dfMaster').form('close');
+```
+
+### 3. 動態切換狀態
+
+```javascript
+// 取得當前狀態
+var st = $('#dfMaster').form('status');   // 'view' | 'inserted' | 'updated'
+
+// 設定狀態（含欄位 readonly 切換、按鈕顯隱、key 欄位保護）
+$('#dfMaster').form('status', 'view');     // 轉唯讀檢視
+$('#dfMaster').form('status', 'updated');  // 轉編輯（key 欄位仍鎖住）
+$('#dfMaster').form('status', 'inserted'); // 轉新增（key 欄位可編）
+```
+
+**何時用**：例如在按下特殊按鈕（非 Add/Edit）進入自訂模式時手動切狀態。
+
+### 4. 程式化驗證 / 清錯誤樣式
+
+```javascript
+// 跑一次完整驗證（XSS → required → validType），回傳 bool
+var valid = $('#dfMaster').form('validate');
+if (!valid) {
+    // validateStyle 若為 dialog 會自動跳 alert；timely 會在欄位下顯示紅字
+    return;
+}
+
+// 清除所有欄位的 has-error 樣式與錯誤訊息
+$('#dfMaster').form('resetValidate');
+```
+
+### 5. 動態查詢條件（setWhere + reload）
+
+```javascript
+// Array 形式（每筆 whereItem）
+$('#dfMaster').form('setWhere', [
+    { field: 'DEPT', operator: '=', value: 'HR' },
+    { field: 'STATUS', operator: '<>', value: 'C' }
+]);
+
+// String 形式（原生 SQL WHERE）
+$('#dfMaster').form('setWhere', "DEPT = 'HR' AND STATUS <> 'C'");
+
+// setWhere 內部會呼叫 reload(1) 自動重查
+```
+
+### 6. 取得關聯物件（重要！）
+
+DataForm 與查詢面板、檢視元件、圖表是**鬆耦合**關係（透過 `queryObj` / `editForm` 互相對應）。要操作它們有專用方法：
+
+```javascript
+// ViewGrid — 以此 form 為 editForm 的 DataGrid（主從關係中的「從」就是本表單）
+var $viewGrid = $('#dfMaster').form('getViewGrid');
+$viewGrid.datagrid('reload');
+
+// ViewObj — 關聯的檢視元件（DataGrid / DataList / Schedule / Tree / Orgchart 擇一）
+var $view = $('#dfMaster').form('getViewObj');
+
+// 重新載入所有關聯檢視（一次刷新 Grid + Chart + Gantt 等）
+$('#dfMaster').form('reloadViewObj');
+
+// DetailGrid — 以此 form 為 parentObject 的明細 DataGrid
+var $detail = $('#dfMaster').form('getDetailGrid');
+$detail.datagrid('options').pagination;
+
+// 取得所有子層（含孫層）明細
+var $allDetails = $('#dfMaster').form('getDetailGrid', true);  // recursive=true
+
+// 查詢面板（本 form 作為查詢面板時，對應的目標物件）
+var $qGrid   = $('#dfQuery').form('getQueryGrid');    // 被此查詢面板查詢的 DataGrid
+var $qForm   = $('#dfQuery').form('getQueryForm');    // 對應的 DataForm
+var $qReport = $('#dfQuery').form('getQueryReport');  // ReportViewer
+
+// 圖表類關聯（通常由查詢面板觸發）
+$('#dfQuery').form('getBarChart');
+$('#dfQuery').form('getLineChart');
+$('#dfQuery').form('getPieChart');
+$('#dfQuery').form('getDonutChart');
+$('#dfQuery').form('getGantt');
+$('#dfQuery').form('getPivotTable');
+```
+
+### 7. 組合範例：主表存檔後刷新明細
+
+```javascript
+// 在 onApplied 事件中
+function onApplied(data) {
+    // 重新載入所有關聯檢視（ViewGrid + 圖表）
+    $(this).form('reloadViewObj');
+
+    // 或只刷新明細
+    $(this).form('getDetailGrid').datagrid('reload');
+
+    // 或通知父 Tab（Tab 模式）
+    $(this).form('refreshTabGrid');
+}
+```
+
+### 8. 組合範例：submit 前自訂驗證明細
+
+```javascript
+// 在 onApply 事件中
+function onApply() {
+    // 內建 validate 會做主表 + 子表（含 endEdit）驗證
+    // 但若要額外業務檢核（例如：明細至少 1 筆、總金額 > 0）
+
+    var $detail = $(this).form('getDetailGrid');
+    var rows = $detail.datagrid('getRows');
+
+    if (rows.length === 0) {
+        $.alert('請至少新增 1 筆明細', 'warning');
+        return false;
+    }
+
+    var total = 0;
+    for (var i = 0; i < rows.length; i++) total += parseFloat(rows[i].AMOUNT) || 0;
+    if (total <= 0) {
+        $.alert('總金額必須大於 0', 'warning');
+        return false;
+    }
+
+    return true;
+}
+```
+
+### 9. 組合範例：動態隱藏/停用某欄位
+
+```javascript
+// 在 onLoad 事件中依狀態決定欄位可編
+function onLoad(row) {
+    // 收單後的記錄：明細欄位都鎖
+    if (row.STATUS === 'CLOSED') {
+        $(this).find('[name="AMOUNT"]').textbox('readonly', true);
+        $(this).find('[name="REMARK"]').textbox('readonly', true);
+    }
+
+    // 依角色隱藏欄位
+    var clientInfo = JSON.parse(sessionStorage.clientInfo);
+    if (!clientInfo.groups.includes('HR')) {
+        $(this).find('[name="SALARY"]').closest('.form-group').hide();
+    }
+}
+```
+
+### 10. 組合範例：匯出表單當前資料為 Word
+
+```javascript
+// 工具列自訂按鈕上
+function onClickExport() {
+    var form = this;  // DataForm jQuery 物件
+
+    // 依當前 row 產生 Word
+    form.form('exportWord');                  // .docx
+    form.form('exportWordPdf');               // .pdf
+    form.form('exportWordExcel', '表單範本'); // .xlsx
+}
+```
+
+### 11. Panel 模式分頁切換
+
+```javascript
+// 從第 1 頁開始
+$('#pfMaster').form('reload', 1);
+
+// 直接跳第 5 頁
+$('#pfMaster').form('reload', 5);
+
+// 重設分頁顯示
+$('#pfMaster').form('refreshPagination', 100);  // 告知總筆數 100
+```
+
+### 12. iframe / Tab 跨頁通知
+
+```javascript
+// 子 Tab 存檔後通知主 Tab 刷新對應 Grid（走 postMessage）
+$('#dfMaster').form('refreshTabGrid');
+
+// 自訂 postMessage 通知（需雙方約定格式）
+window.top.postMessage({
+    type: 'custom-event',
+    formId: 'dfMaster',
+    data: $('#dfMaster').form('getRow')
+}, '*');
+```
+
+### 常見陷阱
+
+| 陷阱 | 說明 | 解法 |
+|------|------|------|
+| **`getRow` 拿不到某欄位值** | 該欄位元件類型未註冊在 form 內部的 collector | 用 `$('#dfMaster_XXX').xxx('getValue')` 直接拿 |
+| **`setWhere` 後沒刷新** | `setWhere` 內部會 reload，若又手動 reload 會送兩次 | 不要再手動呼叫 reload |
+| **`status('view')` 後 required 紅字沒消失** | 狀態切換會刷新 label 樣式但 refval 特殊處理 | 檢查 refval 是否有 `columnMatchs` 導致 blur 連鎖觸發 |
+| **`insert_row` 後欄位預設值沒填入** | 需要 Default 元件同 Container 且 `BindingObject = form.Id` | 確認 Default 元件的 `bindingObject` 屬性 |
+| **`delete_row` 按下沒反應** | `onDelete` 或 `onFlowDelete` 回傳 false 中斷 | 檢查事件程式 |
+| **關聯 Grid 找不到** | `getViewGrid` 依 `editForm = {本 form id}` 比對 | 檢查 DataGrid 的 `editForm` 屬性 |
+| **Key 欄位編輯時仍可改** | `status` 為 `inserted` 時 key 可編、`updated` 才鎖 | 用 edit_row 觸發就會正確鎖定 |
+| **Tab 模式 close 後回到原頁面沒更新** | 沒呼叫 `refreshTabGrid` | 存檔 / 刪除後呼叫它 |
+
 ## 前端行為（JavaScript）
 
 > 原始碼位置：`bootstrap.infolight.js` — `$.fn.form = $.createObj('form', { ... })` (約 line 6345-8082)
