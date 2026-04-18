@@ -163,6 +163,300 @@ function dgMain_onTotal(data) {
 }
 ```
 
+## JavaScript 實戰範例（討論區彙整）
+
+以下範例與陷阱取自 EEP 討論區（`https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=XXX`），都是真實客戶場景。
+
+### 1. `autoApply` 是資料寫入 DB 的關鍵開關
+
+> 來源：[#482525](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482525)
+
+**症狀**：DataGrid 新增後資料顯示在最下方，但沒寫進 DB。
+
+**原因**：`autoApply` 屬性預設 false 時，資料只留在前端變更追蹤清單（`insertedRows` / `updatedRows` / `deletedRows`），要呼叫 `submit` 或在主表 DataForm 一起送出才真的寫 DB。
+
+```javascript
+// JSON 設計時設
+{
+    "type": "datagrid",
+    "id": "dgMaster",
+    "autoApply": true   // ← 新增即寫 DB
+}
+
+// 或程式化
+$('#dgMaster').datagrid('options').autoApply = true;
+
+// 或手動 submit 變更
+$('#dgMaster').datagrid('submit');
+```
+
+### 2. 沒有 onApply 事件 → 用 Validate 元件
+
+> 來源：[#482523](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482523)
+
+DataGrid **沒有** `onApply` 事件。要在送出前檢核欄位（例如 Total 不能超過某值）：
+
+- **不要**試著攔 apply 時機
+- **應**在同容器放一個 `Validate` 元件，`BindingObject` 指向此 DataGrid，設定欄位檢核規則
+- 系統會自動阻擋不合規的 apply
+
+### 3. 虛擬欄位用 formatter 呼叫後端運算
+
+> 來源：[#482511](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482511)
+
+**錯誤做法**：在 `onLoad` 逐筆 `callServerMethod` + `updateRow`（耗效能、會觸發變更追蹤）。
+
+**正確做法**：用欄位 `formatter` 直接 return 運算值（formatter 是顯示層，不會汙染變更追蹤）：
+
+```javascript
+// column 定義
+{
+    "field": "UNIT_PRICE_2",
+    "title": "單價2（虛擬）",
+    "formatter": "formatUnitPrice2"
+}
+
+// JS
+function formatUnitPrice2(value, row, index) {
+    // 同步呼叫後端運算
+    return $.callSyncMethod('ModuleName', 'CalcPrice2', [row.ITEM_ID, row.QTY]);
+}
+```
+
+若要取得所有分頁的運算結果：
+
+```javascript
+var rows = $('#dgMaster').datagrid('getRows');
+for (var i = 0; i < rows.length; i++) {
+    console.log(rows[i].UNIT_PRICE_2);
+}
+```
+
+### 4. 依欄位值動態控制 Edit / Delete 按鈕
+
+> 來源：[#482346](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482346) / [#482420](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482420)
+
+**建議做法**：在 `onUpdate` / `onDelete` 時機點判斷 + `return false`，而非一開始就把按鈕 disable：
+
+```javascript
+function dgMaster_onUpdate(row) {
+    // 已關帳月份不可編輯
+    var ym = row.進貨日期.substr(0, 4) + row.進貨日期.substr(5, 2);
+    var closeYm = $.getVariableValue('closeYm');
+    if (ym <= closeYm) {
+        $.alert('已關帳月份不可編輯', 'warning');
+        return false;  // ← 阻止進入編輯模式
+    }
+    return true;
+}
+
+function dgMaster_onDelete(row) {
+    if (row.UseStatus === '後端已使用') {
+        $.alert('已被引用不可刪除', 'warning');
+        return false;
+    }
+    return true;
+}
+```
+
+優點：按鈕本身不用動、程式碼集中、錯誤訊息清楚。
+
+### 5. ParentObject 後 QueryColumns 失效（限制 + 解法）
+
+> 來源：[#482368](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482368)
+
+**限制**：主明細架構下，明細 DataGrid 的 `QueryColumns` **不會生效**（系統不支援）。
+
+**解法**：把 server 端 `infoDataSource` 關聯拿掉，改由前端控制：
+
+```javascript
+// 明細 onBeforeLoad 動態抓主檔 key
+function dgDetail_onBeforeLoad(param) {
+    var masterRow = $('#dgMaster').datagrid('getSelected');
+    if (masterRow) {
+        param.whereStr = "ORDER_NO = '" + masterRow.ORDER_NO + "'";
+    }
+}
+```
+
+注意：這樣做**新增/編輯/刪除的關聯處理要自行補**（原本 server 端會自動處理主明細一致性）。
+
+### 6. 完全隱藏 DataGrid（含 toolitem 和分頁）
+
+> 來源：[#482103](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482103)
+
+```javascript
+// ❌ 只隱藏表體，toolitem 和分頁還在
+$('#dgMaster').hide();
+
+// ✅ 隱藏整個 DataGrid 容器（含上方工具列與下方分頁）
+$('#dgMaster').closest('div').parent().hide();
+
+// 顯示回來
+$('#dgMaster').closest('div').parent().show();
+```
+
+原因：DataGrid 的工具列、主體、分頁三段在 DOM 上是同層兄弟，都在同一個父層 `<div>` 下。
+
+### 7. setWhere 後強制選第一筆
+
+> 來源：[#481901](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481901)
+
+```javascript
+$('#dgMaster').datagrid('setWhere', "STATUS = 'A'");
+
+// setWhere 是非同步，必須 setTimeout 等 reload 完成
+setTimeout(function () {
+    var $trs = $('#dgMaster').find('tr');
+    $trs.removeClass('selected info');
+    $trs.eq(1).addClass('selected info');  // eq(1) 才是第一筆（eq(0) 是 header）
+    // 觸發 onSelect（可選）
+    var row = $('#dgMaster').datagrid('getRows')[0];
+    if (row) {
+        var opts = $('#dgMaster').datagrid('options');
+        if (opts.onSelect) opts.onSelect.call(null, 0, row);
+    }
+}, 300);
+```
+
+### 8. 分辨使用者是「新增」還是「編輯」
+
+> 來源：[#482208](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482208)
+
+DataGrid 沒有直接取得「當前模式」的 API。用 flag 變數配合事件：
+
+```javascript
+var editMode = '';
+
+function dgMaster_onInsert(row)     { editMode = 'insert'; }
+function dgMaster_onUpdate(row)     { editMode = 'update'; }
+
+function dgMaster_onShowEditor(index, field, editor) {
+    if (editMode === 'insert' && (field === 'A' || field === 'B' || field === 'C')) {
+        // 新增時這三欄可編
+        $('#dgMaster').datagrid('setEditorReadonly', { field: field, value: false });
+    } else if (editMode === 'update') {
+        $('#dgMaster').datagrid('setEditorReadonly', { field: field, value: true });
+    }
+}
+```
+
+### 9. `onShowEditor` 給值的時機陷阱
+
+> 來源：[#482457](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482457)
+
+`onShowEditor` 觸發時，**編輯器可能還沒完全渲染**。立即 `setValue` 會失效。
+
+```javascript
+function dg_onShowEditor(index, field, editor) {
+    if (field === 'FIRST') {
+        // ❌ 可能無效
+        $('#dg').datagrid('setEditorValue', { field: 'FIRST', value: 'X' });
+
+        // ✅ 延後一個 tick
+        setTimeout(function () {
+            $('#dg').datagrid('setEditorValue', { field: 'FIRST', value: 'X' });
+        }, 0);
+    }
+}
+```
+
+### 10. 兩個 DataGrid 關聯顯示 — 用 server infoDataSource
+
+> 來源：[#481965](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481965)
+
+**情境**：`dgDetail.Detail_ATN = dgMaster.AutoNo`，希望 dgDetail 自動跟著主表顯示。
+
+**做法**：不用在前端寫 `onLoad` 過濾。在 **server 端加 `infoDataSource` 關聯**即可，系統自動處理主從資料同步。
+
+### 11. 三階 DataGrid 聯動設定
+
+> 來源：[#481904](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481904)
+
+三階結構 A → B → C：
+- A/B 關聯欄位：`A1`
+- B/C 關聯欄位：`A1, B1`（**兩個 key 都要設**）
+
+三階結構系統是透過**前端快取**處理的。只要 server 端 `infoDataSource` 的雙 key 都設對，切換 A 選列不會亂跳。
+
+**限制**：DataGrid 的**複製按鈕目前只支援到二階**（[#482171](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482171)），三階要靠 JS 自己實作複製。
+
+### 12. 取得「所有分頁」的資料（而非當前頁）
+
+> 來源：[#481910](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481910)
+
+`$('#dgMaster').datagrid('getRows')` **只回傳當前頁的資料**。要取全部：
+
+```javascript
+// ❌ 只有當前頁
+var rows = $('#dgMaster').datagrid('getRows');
+
+// ✅ 呼叫後端取全部（避免前端載入過多）
+var allRows = $.callSyncMethod('ModuleName', 'GetAllRows', [queryParams]);
+```
+
+前端**不建議**強制載入全部資料做運算 — 效能差、安全性低。聚合運算應在後端處理。
+
+### 13. 越南文 / 泰文 / 特殊字元無法顯示
+
+> 來源：[#482032](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482032)
+
+**症狀**：輸入時可正常顯示，`確定`後欄位變空白。
+
+**原因**：XSS 驗證過濾掉特殊字元。
+
+**解法**：DataGrid + UpdateComponent **雙邊都要關**：
+
+```json
+{
+  "type": "datagrid",
+  "id": "dgMaster",
+  "validateXss": false
+}
+```
+
+```json
+{
+  "type": "updatecomponent",
+  "id": "ucMaster",
+  "validateXss": false
+}
+```
+
+### 14. 動態設定 Height
+
+> 來源：[#481941](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481941)
+
+**症狀**：`$('#dgMaster').datagrid('options').Height = webheight` 沒有反應。
+
+**原因**：設 options 不會觸發重繪。
+
+**解法**：直接改容器 CSS + 讓 datagrid 重新計算：
+
+```javascript
+$(window).resize(function () {
+    var webheight = window.innerHeight - 300;
+    $('#dgMaster').closest('.bootstrap-datagrid').css('max-height', webheight + 'px');
+});
+```
+
+### 常見陷阱（討論區彙整）
+
+| 陷阱 | 說明 | 解法 | 來源 |
+|------|------|------|------|
+| **新增不寫 DB** | `autoApply=false` 時只追蹤變更 | 設 `autoApply=true` 或呼叫 `submit()` | [#482525](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482525) |
+| **沒有 `onApply` 事件** | 系統設計上無此時機點 | 用 `Validate` 元件阻擋 | [#482523](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482523) |
+| **虛擬欄位用 `updateRow` 效能差** | 會觸發變更追蹤 | 用 `formatter` return | [#482511](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482511) |
+| **明細 `QueryColumns` 失效** | 主明細架構不支援 | 拆開 `infoDataSource` + JS 控制 whereStr | [#482368](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482368) |
+| **`hide()` 只藏表體** | 工具列/分頁還在 | `closest('div').parent().hide()` | [#482103](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482103) |
+| **`setWhere` 後立刻 `getRows` 拿舊資料** | setWhere 是非同步 | `setTimeout` 300ms | [#481901](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481901) |
+| **`onShowEditor` setValue 失效** | 編輯器渲染未完成 | `setTimeout(..., 0)` | [#482457](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482457) |
+| **越南文/特殊字元變空白** | XSS 驗證過濾 | DataGrid + UpdateComponent 都關 `validateXss` | [#482032](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482032) |
+| **`getRows` 只有當前頁** | 前端分頁特性 | 用後端 `callSyncMethod` 取全部 | [#481910](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481910) |
+| **複製按鈕第三階不支援** | 系統限制 | JS 手動實作 | [#482171](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482171) |
+| **動態 Height 無效** | 改 options 不會重繪 | 改容器 CSS | [#481941](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481941) |
+| **判斷新增或編輯** | 無直接 API | flag 變數 + onInsert/onUpdate | [#482208](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482208) |
+
 ## 內部類別
 
 ### Column
