@@ -122,8 +122,192 @@ Tree 用來以階層樹狀結構呈現具有父子關係的資料。支援指定
 **5. renderNode 動態更新**
 - 透過 `data-nodeid` 找到 treeview 內部節點物件，合併 `props` 到 `node.row`，重新計算 `text`（支援 `onRenderNode`）。
 
+## 實戰範例：動態篩選 Tree 資料
+
+> 來源：[#482305](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482305)（新鷹精器，BOM 上下階查詢）
+
+### `onBeforeLoad` 的 param 物件
+
+從原始碼（L13758-13764）：
+
+```javascript
+var param = {
+    total: true,
+    whereStr: opts.whereStr       // ← 只有 whereStr，沒有 whereItems
+};
+if (opts.onBeforeLoad) {
+    opts.onBeforeLoad.call(this, param);
+}
+$.loadData(opts.remoteName, param, ...)
+```
+
+**重點**：Tree 的 `onBeforeLoad` 只能改 **`param.whereStr`**（字串型）。不能像 DataGrid 用 `whereItems` 陣列。
+
+### 首次載入不顯示資料（保留手動查詢後才載入）
+
+```javascript
+var isFirstTime = true;
+
+function Tree1_onBeforeLoad(param) {
+    if (isFirstTime) {
+        param.whereStr = '1=0';   // 首次：SQL 永遠為 false → 無資料
+        isFirstTime = false;
+        return;
+    }
+    // 後續：維持 setWhere 設好的 whereStr
+}
+```
+
+### ⚠️ 不要在 `onBeforeLoad` 內呼叫 `setWhere`（無限迴圈）
+
+**錯誤寫法**：
+```javascript
+function Tree1_onBeforeLoad(param) {
+    $('#Tree1').tree('setWhere', '1=0');   // ❌ 會無限迴圈
+}
+```
+
+**原因**：`setWhere` 內部會呼叫 `load()`，`load` 又觸發 `onBeforeLoad` → 再 `setWhere` → 無限迴圈（瀏覽器可能當機）。
+
+**正解**：直接改 `param.whereStr` 即可，不要經 `setWhere`。
+
+### BOM 上下階樹狀過濾的完整 pattern
+
+**情境**：DataGrid 查詢某個文件編號 → Tree 只顯示該文件的所有上下階（祖先+子孫），其他無關文件不顯示。
+
+**挑戰**：單純 `WHERE doc_no = 'C'` 只會得到單一節點 C，但 Tree 組樹狀時找不到 C 的父節點 A、B，於是整棵樹消失（即使樹含 A-B-C-D-E，過濾後因為父節點缺失而顯示空）。
+
+**解法**：用 **recursive CTE** 找出所有相關節點 ID，再用 `IN (...)` 過濾。
+
+#### Server C# Method（用 SQL Server recursive CTE）
+
+```csharp
+public object QueryRelatedData(dynamic objParam)
+{
+    string docNo = Convert.ToString(objParam["docNo"]);
+
+    if (string.IsNullOrWhiteSpace(docNo))
+        return new { where = "1=1" };   // 空值 → 顯示全部（或回傳無條件）
+
+    // 單引號 escape，防 SQL Injection
+    string docNoSql = docNo.Replace("'", "''");
+
+    string sql = @"
+        ;WITH StartNode AS (
+            SELECT OID FROM Documents WHERE doc_no = '" + docNoSql + @"'
+        ),
+        UpCTE AS (
+            -- 往上找祖先
+            SELECT OID FROM StartNode
+            UNION ALL
+            SELECT dl.upperDocOID
+            FROM UpCTE u
+            JOIN Doc_Level dl ON dl.lowerDocOID = u.OID
+        ),
+        DownCTE AS (
+            -- 往下找子孫
+            SELECT OID FROM StartNode
+            UNION ALL
+            SELECT dl.lowerDocOID
+            FROM DownCTE d
+            JOIN Doc_Level dl ON dl.upperDocOID = d.OID
+        ),
+        AllNodes AS (
+            SELECT OID FROM UpCTE
+            UNION
+            SELECT OID FROM DownCTE
+        )
+        SELECT OID FROM AllNodes
+        OPTION (MAXRECURSION 32767);";
+
+    DataTable dt = ExecuteDataTable(sql);
+
+    if (dt == null || dt.Rows.Count == 0)
+        return new { where = "1=0" };
+
+    // 收集 OID，組 IN 清單（每個值仍 escape 單引號）
+    var oids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (DataRow r in dt.Rows)
+    {
+        var oid = Convert.ToString(r["OID"]);
+        if (!string.IsNullOrWhiteSpace(oid))
+            oids.Add(oid);
+    }
+
+    string inList = string.Join(",", oids.Select(x => "'" + x.Replace("'", "''") + "'"));
+    return new { where = $"OID IN ({inList})" };
+}
+```
+
+#### 前端 RWD JS
+
+```javascript
+var treeWhereStr = '';
+var isFirstTime = true;
+
+function Tree1_onBeforeLoad(param) {
+    if (isFirstTime) {
+        param.whereStr = '1=0';    // 首次不載入
+        isFirstTime = false;
+        return;
+    }
+    param.whereStr = treeWhereStr;
+}
+
+function dgMaster_onQuery(whereItems) {
+    var docNo = whereItems[0].value;
+
+    // 呼叫 Server Method 找所有相關節點
+    var res = $.callSyncMethod('文件模組', 'QueryRelatedData', { docNo: docNo });
+    treeWhereStr = (res && res.where) ? res.where : '1=0';
+
+    // 觸發 Tree 重新載入（會走 onBeforeLoad 套用新 whereStr）
+    $('#Tree1').tree('load');
+
+    // （可選）自動收合
+    setTimeout(function() {
+        $('#Tree1 .expand-icon.glyphicon.glyphicon-minus').each(function() {
+            $(this).click();
+        });
+    }, 100);
+
+    return true;
+}
+```
+
+### 為什麼需要 Server Method 而不是純 SQL
+
+- **setWhere 的 whereStr 直接接進 InfoCommand 的 WHERE 後面**，但 InfoCommand 的 SQL 通常是簡單的 `SELECT * FROM Documents`，不會支援 recursive CTE
+- 要做上下階展開，**必須先把所有相關節點的 ID 算出來**（一次 SQL recursion），然後用 `IN (id1, id2, ...)` 當 setWhere 條件
+
+## 常見陷阱
+
+| 陷阱 | 說明 | 對策 |
+|------|------|------|
+| **在 `onBeforeLoad` 呼叫 `setWhere` 造成無限迴圈** | `setWhere → load → onBeforeLoad → setWhere...` | 直接改 `param.whereStr` 即可，不要呼叫 setWhere |
+| **過濾單一節點導致整棵樹空** | 父節點不在結果內，樹狀組合找不到根 | 用 recursive CTE 一併帶回所有祖先、子孫 ID |
+| **Tree 沒有 `whereItems` 選項** | `onBeforeLoad` 的 param 只有 `whereStr` | 組字串 SQL；多條件自行 AND / OR 拼接 |
+| **Tree 資料量大 → 頁面 lag** | 數千筆節點全部展開 | 設 CSS `max-height + overflow-y: auto`、控制 `levels` |
+| **setWhere 是非同步** | `setWhere` 內的 `load` 是 AJAX | 後續依賴資料的動作用 `setTimeout` 或等事件 |
+
+### 顯示範圍控制（CSS）
+
+若只是**畫面拖拉太長**，不必從資料層過濾，改用 CSS 即可：
+
+```html
+<!-- 用 Literal 元件放入 -->
+<style>
+#Tree1 {
+    max-height: 500px;      /* 自訂高度 */
+    overflow-y: auto;       /* 超出顯示垂直捲軸 */
+}
+</style>
+```
+
 ## 備註
 
 - 渲染時輸出 `<div class="bootstrap-tree">`。
 - WhereItems 定義樹狀節點選取時傳遞給 TargetObject 的篩選條件，實現主從連動。
 - `BorderColor` 屬性類型宣告為 `bool`（可能為原始碼瑕疵，設計介面標記為 `[ColorEditor]`）。
+- **`onBeforeLoad` 只能改 `whereStr`（字串），無 `whereItems` 選項**（與 DataGrid 不同）。
+- `setWhere` 傳 Array 會被忽略（參見 L13898-13903），實際上只有字串生效。
