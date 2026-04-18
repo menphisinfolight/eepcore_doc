@@ -442,6 +442,164 @@ public object TestOleDb()
 - [ ] 重 build 所有專案後 Web 啟動目錄 `bin/Debug/net8.0/` 是否有預期的 NuGet DLL
 - [ ] 測試含該 NuGet 的 ServerMethod 能否被前端 RWD 呼叫成功
 
+## 為什麼改 MSBuild.cs / csproj 後要「Clean」再 Build？
+
+> 來源：[#474411](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474411)（Roland：建議 clean 再 build）、[#472585](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472585)（NPOI 更新後存檔失敗）、[#474947](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474947)（SP5 升版檔案殘留）、[#481344](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481344)
+
+### 典型症狀
+
+多位客戶回報「明明改了 `MSBuild.cs` 但沒效果」：
+
+- [#474411](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474411)：加了 `AppendUsing("System.Data.OleDb")` 但**存檔後 UserModule.cs 沒出現新的 using**。客戶最終解法：「我把整個 EEPCore **重新建置一次**再存檔就有了」
+- Roland 建議：「如果透過 VSCode 建置，建議可以將整個方案 **clean 再 build**」
+- [#472585](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472585)：NPOI 更新後 Server 端無法存檔（告知無 using）
+
+### 根本原因：EEP 的三層動態 DLL 機制
+
+`dotnet build` 是**增量編譯**（看時間戳記），但 EEP 有三層 DLL 的相依**不在 MSBuild 的追蹤範圍**：
+
+```
+▓ 層 1：框架 DLL（Web process 啟動時載入）
+  EEPWebClient.Core/bin/Debug/net8.0/
+    ├─ EEPGlobal.Core.dll          ← 含 MSBuild.cs 編譯後的邏輯
+    ├─ EEPServerTools.Core.dll
+    └─ (其他 NuGet.dll)
+
+▓ 層 2：編譯用 DLL（EEPServer.Core）
+  EEPServer.Core/bin/Debug/net8.0/
+    ├─ EEPServer.Core.dll          ← 每次存檔被覆寫，用來產 {id}.Core.dll
+    └─ (其 csproj 參照的 NuGet)
+
+▓ 層 3：使用者模組 DLL（Runtime 動態載入）
+  design/server/{Solution}/
+    └─ {id}.Core.dll                ← Web 透過 DataModule.LoadComponents 動態載
+```
+
+**關鍵問題**：
+- 使用者按「存檔」→ 呼叫的是**層 1 的 `EEPGlobal.Core.dll`** 中的 `MSBuild.Build`
+- 若**改了 `MSBuild.cs` 但沒重 build + 沒重啟 Web** → 層 1 的 DLL 還是舊的 → 存檔時跑的還是舊邏輯、AppendUsing 沒效果
+- `dotnet build` 的**增量編譯**依賴檔案修改時間，若改動太小（或 obj 快取損壞）可能不會重新編譯，造成層 1 DLL 沒更新
+
+### Clean 能解決的具體情境
+
+| 情境 | Clean 為何有效 |
+|------|--------------|
+| **改 `MSBuild.cs` 的 `AppendUsing` 沒效果** | 強制重編譯 `EEPGlobal.Core.dll`，Web process 重啟後才能載入新版 |
+| **加 NuGet PackageReference 存檔 OK 但 Runtime 找不到 DLL** | clean 時會強制 `dotnet restore`，讓 NuGet DLL 重新 flow 到各 bin |
+| **升級 EEP 版本後編譯錯誤或行為怪異** | 舊版 `.obj`、`.dll` 殘留 — 舊版已移除的檔案還在 bin/ 中（如 [#474947](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474947) 的 `PushHelper.cs`） |
+| **`dotnet build` 過程顯示「重建次數 10」** | 表示 Web 沒停，DLL 被 lock 住（[#472585](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472585)）— 需先停 Web 再 clean |
+| **編譯錯誤訊息怪異、不具體** | `obj/` 目錄中介檔案損壞，clean 清光重編 |
+
+### 為什麼 EEP 比一般 .NET 專案更常需要 Clean？
+
+一般 .NET 專案：改 csproj → MSBuild 自動偵測 → 重 restore + 重編譯。
+
+**EEP 的特殊點**：
+
+1. **使用者 DLL 不透過 project reference 載入**
+   - Web 用 `Assembly.Load(bytes)` **動態載**（`DataModule.LoadAssemlby` 流程）
+   - MSBuild 不知道 `{id}.Core.dll` 相依於 EEPServerTools.Core，不會追蹤版本
+2. **`EEPServer.Core` 與 `EEPWebClient.Core` 兩個獨立編譯鏈**
+   - 改一邊不會觸發另一邊重編
+   - 改 NuGet 在 EEPServer.Core → EEPWebClient 的 bin/ 不會同步（見上方「兩個獨立的專案參考鏈」）
+3. **Web process 持有 DLL lock**
+   - IIS / Kestrel 執行中 → `EEPGlobal.Core.dll`、`EEPServerTools.Core.dll` 被鎖
+   - 直接 build 會失敗或編好卻沒被載入
+
+### Clean 的正確流程
+
+```bash
+# 1. 停 Web（釋放 file lock）
+iisreset /stop                          # IIS
+# 或：關掉 dotnet EEPWebClient.Core.dll 的 console / kill process
+
+# 2. 關閉 VS / VS Code（若有開著 EEPCore 方案）
+
+# 3. Clean 整個方案
+cd EEPCore   # solution 根目錄
+dotnet clean
+
+# 或 Visual Studio: Build → Clean Solution
+
+# 手動更徹底（若 dotnet clean 不夠）：
+Remove-Item -Recurse -Force */bin, */obj       # PowerShell
+# Linux / WSL:
+find . -type d \( -name bin -o -name obj \) -exec rm -rf {} +
+
+# 4. Restore（強制拉 NuGet）
+dotnet restore
+
+# 5. Build
+dotnet build
+
+# 或 Visual Studio: Build → Rebuild Solution
+
+# 6. 重啟 Web
+iisreset /start
+# 或 重跑 dotnet run / IIS Express
+```
+
+### 何時必須 Clean（而不只是 Build）
+
+| 動作 | 只 Build 夠嗎？ | 建議 |
+|------|---------------|------|
+| 改 Server 端程式碼（EEP 設計介面存檔） | ✅ 不需 clean | 存檔自動觸發 MSBuild.Build |
+| 改 `MSBuild.cs`（AppendUsing / 其他邏輯） | ❌ 必須 clean | 影響 EEPGlobal.Core.dll，Web 要重啟 |
+| 加 / 改 `PackageReference` | ❌ 必須 clean | `dotnet restore` 可能不會被自動觸發 |
+| 升級 EEP 版本（整批檔案更新） | ❌ 必須 clean | 舊 bin/obj 殘留問題 |
+| 修改公版的 `.cs`（如 `Startup.cs`） | 通常 build 可以 | 若有 behavior 異常再 clean |
+| 修改自訂 Provider 的 `.cs` | 通常 build 可以 | 同上 |
+
+### UserModule.cs 的同步陷阱（補充）
+
+> 來源：[#472754](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472754) / [#479212](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=479212) / [#480715](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=480715)
+
+另一個常見迷思：**改 `UserModule.cs` 存檔**（例如在 VS Code 直接編輯 UserModule.cs），以為會影響 EEP 設計介面的程式碼。
+
+**不會**。Roland 說明（[#472754](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472754)）：
+
+> UserModule.cs 是 server 端程式碼**存檔後之內容呈現**，用來提供 server 端程式碼 **debug**，**異動並不會同步 server 端程式碼**。
+
+### 檢驗清單：改了 `MSBuild.cs` 後沒生效？
+
+照順序排查：
+
+1. [ ] **EEPGlobal.Core 有重新 build 嗎？** 檢查 `EEPWebClient.Core/bin/Debug/net8.0/EEPGlobal.Core.dll` 的時間戳
+2. [ ] **Web 有重啟嗎？** `iisreset` 或 kill Kestrel 重跑
+3. [ ] **有 clean 嗎？** 若仍沒效果，`dotnet clean` + 刪 `bin/obj` 再 build
+4. [ ] **對 Server 端有重新存檔嗎？** UserModule.cs 只反映「最後存檔」，沒存檔前看到的是舊版
+5. [ ] **VS Code 還開著嗎？** 可能 hold DLL lock
+
+### 最後救命招：手動重 build + 重新存檔
+
+來自 [#474411](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474411) 客戶 wayne1108 的原話：
+
+> 「直接重新存檔還是沒有出現，但是我把**整個 EEPCore 重新建置一次**再存檔就有了」
+
+順序：
+1. Clean EEPCore solution
+2. Build 所有專案（至少 EEPGlobal.Core、EEPServerTools.Core、EEPWebClient.Core、EEPServer.Core）
+3. **重啟 Web**
+4. 回到 EEP 設計介面，對使用該 using 的 Server 模組**重新存檔**
+5. 這時 UserModule.cs 才會用新的 AppendUsing 包裝
+
+## 相關討論區（建置 / Clean 類）
+
+| ID | 日期 | 主題 |
+|----|------|------|
+| [#474411](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474411) | 2024-06 | MsBuild.cs 添加引用（Roland 建議 clean 再 build） |
+| [#474441](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474441) | 2024-07 | 加入 MSBuild 的 package 找不到（三個專案參考鏈） |
+| [#472585](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472585) | 2023-10 | 更新後引用消失造成存檔問題（DLL 被 lock） |
+| [#472754](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472754) | 2023-11 | 修改 UserModule.cs 不會同步到 Web 編輯器 |
+| [#479212](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=479212) | 2025-03 | UserModule.cs 只有最後一次存檔的程式碼 |
+| [#480715](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=480715) | 2025-06 | EEP Core Debug 須對 server 端存檔後才能 debug |
+| [#474318](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474318) | 2024-06 | 命令列建置 EEPCore 專案（`dotnet build`） |
+| [#472792](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472792) | 2023-11 | publish 專案錯誤 MSB1009 |
+| [#474947](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474947) | 2024-09 | SP5 升版後重新建置錯誤（舊檔殘留） |
+| [#481344](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481344) | 2025-08 | SP2→SP6 建置錯誤 |
+| [#482206](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482206) | 2026-01 | SP7 升版 server 建置問題 |
+| [#481741](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481741) | 2025-11 | 升級 SP7 編譯成功但網站無法啟動 |
+
 ### 解法 3：新增客製 Provider（進階）
 
 若你的外部整合會跨多個模組，與其每次都依賴 `using`，不如寫一個 `EEPGlobal.Core/Provider/MyIntegrationProvider.cs` 的客製 Provider 類，封裝常用方法，每個模組只要 `new MyIntegrationProvider(Context).DoXxx()`。這樣：
