@@ -6,24 +6,36 @@
 
 **公版 EEP 安裝後，預設不會跑任何排程**。
 
-搜尋整個 `EEPWebClient.Core`（Web 主程式）原始碼：
+### 官方 R&D 的建議作法
 
-| 搜尋目標 | 結果 |
-|---------|------|
-| `ScheduleHelper` 是否被 Web 引用 | ❌ 無 |
-| `StartSchedule()` 是否被 Web 呼叫 | ❌ 無 |
+在 **`EEPWebClient.Core/Startup.cs`** 中以**註解**形式預埋好啟動碼：
 
-所以：
+```csharp
+//var helper = new EEPServerTools.Core.Utility.ScheduleHelper();
+//helper.StartSchedule();
+```
+
+要啟用 Web 內嵌排程，**取消註解**即可（不用重寫、不用外掛元件）。
+
+### 情境對照
 
 | 情境 | 排程會跑嗎？ |
 |------|-------------|
-| 只裝 EEP（Web 跑起來）、沒做其他動作 | ❌ **不會** |
+| 只裝 EEP（Web 跑起來）、Startup.cs 維持註解 | ❌ **不會** |
 | 部署並執行 `Schedule.Core.exe` | ✅ 會 |
-| 自行改 `EEPWebClient.Core/Program.cs` 加 `new ScheduleHelper().StartSchedule();` | ✅ 會 |
+| **取消 Startup.cs 的註解**（Web 內嵌方式） | ✅ 會 |
 
 **結論**：要用排程，**必須選一條路**。兩條都沒做 → SYS_SCHEDULE 裡的排程設定**完全不會執行**，也不會有任何錯誤訊息（因為根本沒有 process 在檢查）。
 
 這是容易誤解的地方 — 看到 SYS_SCHEDULE 表有資料就以為排程有在跑，但其實需要「**有人啟動機制**」才會有排程引擎。
+
+### 版本差異注意
+
+不同 SP7 小版本 Startup.cs 內容可能略有差異：
+- **有些版本**已預埋上述兩行註解
+- **有些版本**完全沒有（例如 `EEPCore_SP7_TEST` 這個測試版搜尋結果為 No matches）
+
+若拿到的版本找不到預埋的註解，手動加在 `Configure` 方法最末即可（見下方「方式 B」章節）。
 
 ## 兩種機制速覽
 
@@ -129,17 +141,45 @@ sc start "EEP Schedule"
 
 `EEPServerTools.Core/Utility/ScheduleHelper.cs` L15-303
 
-### ⚠️ 公版 Web 不會自動啟動
+### ⚠️ 公版 Web 不會自動啟動（需取消註解）
 
-這個 class 提供了 `StartSchedule()` API，**但預設沒有任何公版程式碼在呼叫它**：
+這個 class 提供了 `StartSchedule()` API，**但預設是註解狀態**。
 
-- `EEPWebClient.Core/Program.cs` — 不呼叫
-- `EEPWebClient.Core/Startup.cs` — 不呼叫
-- 任何公版 Controller / Middleware — 不呼叫
+### R&D 官方建議作法：取消 Startup.cs 的註解
 
-所以只要沒客製、沒整合，單純跑 EEP 的 Web 應用**完全不會有排程行為**。使用者要用方式 B 的話，**必須自己改動原始碼**（或用包裝的方式）把 `StartSchedule()` 接上去。
+有些 SP7 版本的 `EEPWebClient.Core/Startup.cs` 已預埋：
 
-這是**客製 / 擴充行為**，不是公版行為。
+```csharp
+//var helper = new EEPServerTools.Core.Utility.ScheduleHelper();
+//helper.StartSchedule();
+```
+
+要啟用，直接**取消註解**（去掉 `//`）即可：
+
+```csharp
+var helper = new EEPServerTools.Core.Utility.ScheduleHelper();
+helper.StartSchedule();
+```
+
+推薦位置：`Configure(IApplicationBuilder app, IWebHostEnvironment env)` 方法內、`app.UseEndpoints(...)` 之後。
+
+### 若找不到預埋的註解（手動加）
+
+某些 SP7 版本沒有預埋（例：`EEPCore_SP7_TEST`）。此時自己加在 `Configure` 方法最末：
+
+```csharp
+public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+{
+    // ... 既有 middleware 設定 ...
+
+    app.UseEndpoints(endpoints => {
+        // ... 既有 routes ...
+    });
+
+    // 啟動排程
+    new EEPServerTools.Core.Utility.ScheduleHelper().StartSchedule();
+}
+```
 
 ### 關鍵 API
 
@@ -331,7 +371,7 @@ LogSchedule(startTime, row, result)
 
 | 陷阱 | 說明 | 對策 |
 |------|------|------|
-| **🔴 以為裝好 Web 就會跑排程** | 公版 Web 不會自動啟動 ScheduleHelper，沒有任何公版程式碼呼叫 StartSchedule | 部署 Schedule.Core.exe，或自行改 Program.cs 加 StartSchedule |
+| **🔴 以為裝好 Web 就會跑排程** | 公版 Web 不會自動啟動 ScheduleHelper（Startup.cs 啟動碼預設註解） | 部署 Schedule.Core.exe，或取消 Startup.cs 中的註解 |
 | **排程設定建好了但沒動靜** | SYS_SCHEDULE 表有資料 ≠ 排程會跑；要有 process 在檢查才行 | 檢查是否有 Schedule.Core.exe 在執行，或 Web 有無自訂 StartSchedule |
 | **雙軌邏輯分歧** | `Program.cs` 與 `ScheduleHelper.cs` 幾乎複製貼上，改一邊忘另一邊 | 改排程邏輯時兩個檔都要改 |
 | **多 instance Web 啟用 ScheduleHelper** | 每個 node 都跑，任務被執行 N 次 | 只在一台 node 啟動，或轉用 Schedule.Core.exe |
