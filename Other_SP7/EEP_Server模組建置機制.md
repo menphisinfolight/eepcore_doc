@@ -305,6 +305,142 @@ code.AppendUsing(new string[] {
 
 - **EEP 升級會覆蓋** — `MSBuild.cs` 是公版檔案，升級 EEP 版本時會被覆寫；要維護升級檢查清單記錄這個修改
 - **需要 DLL 參照** — 加 using 只是 import，型別所屬的 DLL 必須在 `EEPServer.Core.csproj` 的參照清單中。若是 NuGet 套件，要到 csproj 加 `PackageReference`
+- **只加 `EEPServer.Core.csproj` 不夠**（⚠️ 常見陷阱）— 見下方「加 NuGet 套件的完整流程」
+
+## 加 NuGet 套件的完整流程（⚠️ 常見陷阱）
+
+> 來源：[#474441](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474441)（新樓 slh / Roland 回覆）
+
+### 陷阱情境（真實案例）
+
+客戶 slh 加入 `System.Data.OleDb` NuGet 套件：
+
+1. ✅ 在 `EEPServer.Core.csproj` 加 `<PackageReference Include="System.Data.OleDb" Version="6.0.0" />`
+2. ✅ 在 `MSBuild.cs` 的 `AppendUsing` 加 `"System.Data.OleDb"`
+3. ✅ 重 build EEPCore，無報錯
+4. ✅ 在 EEP 設計介面寫 Server code 用 OleDb，**存檔成功編譯成 `.dll`**
+5. ❌ 前端 RWD 呼叫該 Server Method → **Runtime 報錯找不到 `System.Data.OleDb`**
+
+### 根本原因
+
+EEP 有**兩個獨立的 .NET 專案參考鏈**：
+
+```
+▓ 編譯鏈（用來產出使用者的 {id}.Core.dll）
+  EEPServer.Core  ←  這是使用者程式碼被塞進去的專案
+    └→ EEPServerTools.Core
+    └→ 其他 NuGet
+
+▓ 執行鏈（Web 應用程式啟動載入的 DLL）
+  EEPWebClient.Core  ←  Web 啟動的主程式
+    └→ EEPGlobal.Core
+    └→ EEPServerTools.Core
+    └→ 其他 NuGet
+
+  ⚠ EEPServer.Core 不在執行鏈裡
+    EEPWebClient.Core 沒有 reference EEPServer.Core
+```
+
+**結果**：
+- 加 NuGet 到 `EEPServer.Core` → **只影響編譯鏈**，NuGet 的 DLL 出現在 `EEPServer.Core/bin/...`，**不會** copy 到 Web 的 `bin/Debug/net8.0/`
+- 使用者程式碼 `{id}.Core.dll` 編譯時能找到型別（編譯鏈有）→ 存檔成功
+- Runtime 時，Web 在 `EEPWebClient.Core/bin/...` 找相依 DLL → **找不到** `System.Data.OleDb.dll` → 報錯
+
+### 正確做法：三個層次都要處理
+
+| 層次 | 要動的地方 | 目的 |
+|------|-----------|------|
+| **1. 編譯時編譯器認得型別** | `EEPServer.Core.csproj` 加 `<PackageReference>` | 讓 `UserModule.cs` 編譯時不報「找不到型別」錯誤 |
+| **2. Runtime 載入 DLL** | **Web 執行鏈中任一專案**的 csproj 加 `<PackageReference>`（以下擇一即可） | 讓 NuGet 的 DLL flow 到 Web 的 bin 目錄 |
+|  | - `EEPWebClient.Core.csproj`（最直接） |  |
+|  | - `EEPGlobal.Core.csproj` |  |
+|  | - `EEPServerTools.Core.csproj` |  |
+| **3. 寫程式不用打全名**（可選） | `MSBuild.cs` 的 `AppendUsing` 加 namespace | 寫 `new OleDbConnection(...)` 而不是 `new System.Data.OleDb.OleDbConnection(...)` |
+
+### 三個層次的職責邊界
+
+| 層次 | 缺這個會怎樣 |
+|------|-------------|
+| 只缺 1（沒加 `EEPServer.Core.csproj`） | 存檔時編譯失敗：`找不到型別 OleDbConnection` |
+| 只缺 2（只加 EEPServer.Core） | 存檔成功，Runtime 拋 `FileNotFoundException` — **就是 #474441 的情境** |
+| 只缺 3（沒加 `AppendUsing`） | 仍可用，但程式要寫完整命名空間 `System.Data.OleDb.OleDbConnection` |
+
+### 客戶實測
+
+[#474441](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474441) Roland 建議加 3 個專案：
+1. `EEPWebClient.Core.csproj`
+2. `EEPGlobal.Core.csproj`
+3. `EEPServerTools.Core.csproj`
+
+但客戶實測結果：**只加 2 與 3（`EEPGlobal` + `EEPServerTools`）就能運作**，沒加 `EEPWebClient.Core` 也 OK。
+
+**為什麼**？因為 `EEPWebClient.Core` 在它的參考鏈中已包含 `EEPGlobal` 與 `EEPServerTools`，所以任一加 NuGet 都會 flow 到 `EEPWebClient.Core/bin/`。實務上**加一個就夠**（挑最邏輯相關的，例如資料庫相關加到 `EEPServerTools.Core`）。
+
+### 完整範例：加入 `System.Data.OleDb`
+
+**步驟 1** — `EEPServer.Core/EEPServer.Core.csproj`：
+```xml
+<ItemGroup>
+  <PackageReference Include="System.Data.OleDb" Version="6.0.0" />
+  <!-- 其他既有的 NuGet... -->
+</ItemGroup>
+```
+
+**步驟 2** — `EEPServerTools.Core/EEPServerTools.Core.csproj`（或 `EEPGlobal.Core.csproj`）：
+```xml
+<ItemGroup>
+  <PackageReference Include="System.Data.OleDb" Version="6.0.0" />
+  <!-- 其他既有的 NuGet... -->
+</ItemGroup>
+```
+
+**步驟 3（可選）** — `EEPGlobal.Core/MSBuild.cs` L131-150：
+```csharp
+code.AppendUsing(new string[] {
+    // ... 既有 18 個 ...
+    "System.Data.OleDb",      // ← 新增
+});
+```
+
+**步驟 4** — 重 build：
+```bash
+cd EEPServer.Core && dotnet build
+cd ../EEPServerTools.Core && dotnet build
+cd ../EEPGlobal.Core && dotnet build    # 若有改 MSBuild.cs
+cd ../EEPWebClient.Core && dotnet build
+```
+
+**步驟 5** — **重啟 Web**（IIS Recycle App Pool 或重跑 Kestrel），讓新 DLL 被載入。
+
+### 驗證
+
+在 Server code 裡寫：
+```csharp
+public object TestOleDb()
+{
+    using (var conn = new System.Data.OleDb.OleDbConnection("Provider=...;"))
+    {
+        conn.Open();
+        return "OleDb OK";
+    }
+}
+```
+
+前端按鈕 → 呼叫 Server Method：
+- ✅ 不報錯 → 三個層次都對
+- ❌ 存檔時報 `找不到型別` → 缺步驟 1
+- ❌ Runtime 報 `FileNotFoundException` → 缺步驟 2（最常見）
+- ❌ 報 `namespace 不存在` → 步驟 3 沒加但又用了短名稱（改寫全名或回頭加 AppendUsing）
+
+### 升級 checklist
+
+升級 EEP 版本時，**多個 csproj 與 MSBuild.cs 都可能被覆寫**，修改記錄要包括：
+
+- [ ] `EEPServer.Core.csproj` 是否保留新增的 `<PackageReference>`
+- [ ] `EEPServerTools.Core.csproj`（或 `EEPGlobal.Core.csproj`）是否保留
+- [ ] `MSBuild.cs` 的 `AppendUsing` 清單是否保留
+- [ ] 重 build 所有專案後 Web 啟動目錄 `bin/Debug/net8.0/` 是否有預期的 NuGet DLL
+- [ ] 測試含該 NuGet 的 ServerMethod 能否被前端 RWD 呼叫成功
 
 ### 解法 3：新增客製 Provider（進階）
 
@@ -336,6 +472,7 @@ code.AppendUsing(new string[] {
 | **改 MSBuild.cs 的 AppendUsing 未重 build** | 只改 .cs 不 build → 存檔還是用舊的包裝 | 重 build EEPGlobal.Core 並重啟 Web |
 | **升級 EEP 後 AppendUsing 被還原** | MSBuild.cs 是公版 | 升級 checklist 記錄；或改用客製 Provider 封裝 |
 | **編譯錯誤訊息不完整** | `MSBuild.Build` 只抓含 " error " 的行（L95），其他上下文捨棄 | 直接到 `EEPServer.Core/` 下手動 `dotnet msbuild` 看完整輸出 |
+| **加 NuGet 只加 EEPServer.Core 存檔 OK 但 Runtime FileNotFoundException** | Web 執行鏈不含 EEPServer.Core | 同時在 EEPGlobal.Core 或 EEPServerTools.Core 加 PackageReference（見「加 NuGet 套件的完整流程」） |
 | **多使用者同時存檔衝突** | `lock(typeof(MSBuild))` 只 lock 單一 process，跨機器不保護 | Web 集群部署時，同時存檔同一模組仍可能互相覆寫 UserModule.cs |
 
 ## 參考檔案
