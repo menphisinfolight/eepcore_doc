@@ -151,11 +151,70 @@ value = btoa(unescape(encodeURIComponent(value)));
 - 查詢（WHERE NAME LIKE '%東京%'）失效
 - 每次顯示都要 decode
 
-## 相關討論區
+## 相關討論區（完整彙整）
 
-- [#482032](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482032) — 越南文顯示問題，當時的建議是關 validateXss
-- [#473697](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473697) — Sysusers 使用者管理關 validateXss（`$.validateScript = v => v` 全域覆寫）
-- [#473029](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473029) — ValidateXss 用途說明
+討論區從 2022 到 2026 共有 **26 篇**相關紀錄，以下按語系 / 主題分組。
+
+### 日文相關
+
+| ID | 日期 | 主題 | 結論 |
+|----|------|------|------|
+| [#482568](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482568) | 2026-04-14 | dfMaster / dg 輸入日文被認為不是有效內容 | DataGrid + UpdateComponent 雙邊 validateXss 設 false 後正常 |
+| [#467349](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=467349) | 2022-08-27 | DataGrid 欄位日文顯示（三井日本料理） | validateXss 設 false 後資料出現，但部分日文字變方塊字 → 字型另外處理 |
+
+### 越南文相關
+
+| ID | 日期 | 主題 | 結論 |
+|----|------|------|------|
+| [#482032](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482032) | 2025-12-11 | Datagrid 越南文無法顯示 | DataGrid + UpdateComponent 雙邊關 |
+| [#480899](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=480899) | 2025-07-04 | 越南文存檔問題 | 同上 |
+| [#467407](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=467407) | 2022-09-04 | refVal 無法顯示越南文 | refVal 也受影響，同樣 pattern |
+| [#466361](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=466361) | 2022-04-12 | 越南文顯示問題 | 舊版需要替換 Provider 檔重 build |
+| [#466291](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=466291) | 2022-03-31 | Table 越南文存檔錯誤 | 官方提供了 EEPGlobal.Core\Provider 替換檔（早期版本） |
+| [#466234](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=466234) | 2022-03-24 | relval 元件無法顯示越南字 | 同一系列 |
+| [#466212](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=466212) | 2022-03-23 | DataGrid 元件無法顯示越南字 | 最早的越南文討論 |
+
+### 泰文相關
+
+| ID | 日期 | 主題 |
+|----|------|------|
+| [#481637](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481637) | 2025-10-15 | 語系選擇中 Other1 是否可以改為泰文 |
+
+### 特殊字元 / XSS 驗證一般問題
+
+| ID | 日期 | 主題 | 關鍵點 |
+|----|------|------|--------|
+| [#478410](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=478410) | 2024-11-27 | datagrid textarea `error has some characters` | textarea 也受 validateXss 驗證 |
+| [#476227](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=476227) | 2024-10-14 | 單據簽核時 ORA-01704 錯誤 | Oracle 長度限制問題，非 validateXss，但常一起出現 |
+| [#473748](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473748) | 2024-03-28 | 特殊字元可以正常存檔 | 關 validateXss |
+| [#473697](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473697) | 2024-03-22 | Sysusers.cshtml 使用者管理 validateXss:false | **主頁原始碼覆寫 `$.validateScript = v => v`** |
+| [#473638](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473638) | 2024-03-15 | 存檔時符號問題 | 特殊符號不在白名單 |
+| [#473197](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473197) | 2024-01-11 | XSS 驗證如何調整 | 整體調整方案 |
+| [#473091](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473091) | 2023-12-28 | 特殊字無法顯示 | 官方建議參考 ReadMe 說明 |
+| [#473029](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473029) | 2023-12-20 | **ValidateXss 用途說明** | 最完整的背景知識，含 ReadMe 連結 |
+| [#469605](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469605) | 2023-06-30 | Server 驗證按鈕後報錯 | |
+| [#469187](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469187) | 2023-05-17 | 有特殊字元無法存檔 | |
+| [#469008](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469008) | 2023-04-26 | 驗證功能錯誤 `MenuProvider.validateScript not supported` | 該驗證功能後來**被移除**（功能未支援） |
+| [#468606](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=468606) | 2023-03-09 | 選單調整順序時出現 validateXss | Menu 排序誤觸 |
+| [#467941](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=467941) | 2022-11-23 | Excel 上傳特殊字元的問題 | 匯入路徑也會驗 |
+| [#467923](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=467923) | 2022-11-22 | 存檔時特殊字元出現「不是有效的內容」 | |
+| [#467225](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=467225) | 2022-08-11 | 輸入其他語言 | 多語系通用問題 |
+
+### 歷史脈絡觀察
+
+1. **2022 年**多為越南文客戶（薩摩亞商旺隆、炫佳）集中回報，官方提供**替換 Provider 檔**的解法（舊版機制）
+2. **2023 年**轉為一般特殊字元 / 符號問題，官方建議改用 `validateXss: false` + ReadMe 文件宣導
+3. **2024 年**出現 **全域覆寫 `$.validateScript`** 的方案（#473697），適用於系統公版頁
+4. **2025-2026 年**問題仍持續（日文、越南文新客戶），**根本解法（擴充白名單）仍未進入官方版本**
+
+### 建議
+
+本文件提供的「擴充白名單」方案（前後端 regex 同時修改）是目前**最完整、不失去 XSS 保護**的解法。相較於上述討論區多數建議「關 validateXss」，擴充白名單：
+
+- ✅ 保留對 `<script>` 等危險字串的擋功能
+- ✅ 不需每個元件個別設定
+- ✅ 可針對客戶語系需求自訂（例如某公司只需日文，就只加 `\u3040-\u309F\u30A0-\u30FF`）
+- ⚠️ 需 rebuild 一次、並在升級 checklist 記錄
 
 ## 驗證方法
 
