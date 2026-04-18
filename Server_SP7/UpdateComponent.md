@@ -300,6 +300,280 @@ public void uc訂單_onAfterApplied(object sender, dynamic rows, List<string> sq
 }
 ```
 
+### 範例 10：事件中取得更新前的舊資料（`GetOldRow`）（[#482517](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482517)）
+
+**情境**：想在 `onBeforeUpdate` 比對「修改前 vs 修改後」的差異。
+
+```csharp
+public bool uc員工資料表_onBeforeUpdate(object sender, dynamic row, List<string> sqls)
+{
+    // 正確寫法：從 UpdateComponent 的 Command 呼叫 GetOldRow
+    var uc = sender as UpdateComponent;
+    var oldRow = uc.GetCommand().GetOldRow(row);
+
+    // 或從 Module 取 UpdateComponent 實例
+    // var oldRow = this.GetComponent<UpdateComponent>("uc員工資料表").GetCommand().GetOldRow(row);
+
+    if (oldRow == null) return true;  // 找不到舊資料（罕見）
+
+    // 比對欄位變化
+    if (oldRow["薪資"]?.ToString() != row.薪資.ToString())
+    {
+        // 薪資有變動 → 寫入調薪紀錄
+        sqls.Add($"INSERT INTO SALARY_HISTORY (USER_ID, OLD_SALARY, NEW_SALARY, CHANGE_DATE) VALUES "
+            + $"({MarkValue((object)row.USER_ID)}, {MarkValue(oldRow["薪資"])}, {MarkValue((object)row.薪資)}, "
+            + $"{MarkValue((object)DateTime.Now.ToString("yyyyMMdd"))})");
+    }
+    return true;
+}
+```
+
+> 常見錯誤：把 `GetComponent<UpdateComponent>("...")` 的參數寫成 InfoCommand 名稱或 class 名。參數應該是 **UpdateComponent 的 id**。
+
+### 範例 11：DETAIL 的 onBeforeApply 取得 MASTER 初始值（[#474147](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474147)）
+
+**情境**：明細表要知道主檔「修改前的原始值」來比對差異。
+
+**做法**：在主檔 DataForm 的 `onLoad` 把 row 存全域變數，明細事件從變數讀取。
+
+**前端**：
+```javascript
+function dfMaster_onLoad(row) {
+    if ($('#dfMaster').form('status') === 'updated') {
+        // 把主檔原始值存進全域變數（只能存字串）
+        $.setVariableValue('masterOriginal', JSON.stringify(row));
+    }
+}
+```
+
+**後端明細事件**：
+```csharp
+public void ucDetail_onBeforeApply(object sender, dynamic rows, List<string> sqls)
+{
+    var clientInfo = (sender as UpdateComponent).Module.ClientInfo;
+    var masterOriginalJson = clientInfo.Variables.Get("masterOriginal");
+    if (string.IsNullOrEmpty(masterOriginalJson)) return;
+
+    var masterOriginal = JObject.Parse(masterOriginalJson);
+    // 用 masterOriginal 比對...
+}
+```
+
+> **注意**：全域變數按**裝置 + 瀏覽器快取**隔離，不跨使用者、不跨裝置。
+
+## 事件執行順序的重要觀念
+
+> 來源：[#473877](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473877) / [#471374](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=471374) / [#481331](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481331) / [#472657](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472657)
+
+常見誤會：「`onAfterInsert` 應該在 INSERT 真正執行**之後**才呼叫」— 但 SQL Profiler 看起來**順序不對**。
+
+### 實際機制
+
+1. 事件方法（`onBeforeXxx` / `onAfterXxx`）的角色是**加 SQL 到 `sqls` 清單**
+2. `UpdateComponent.GetSqls()` 回傳整批 SQL
+3. `DataModule.UpdateDataset()` 把清單交給 `DbHelper.ExecuteNonQuery(sqls, options)` **一次性**執行（同一個 Transaction）
+4. 所以 `onAfterInsert` 的程式碼「跑完」時，INSERT **還沒真正進 DB** — 它只是把 SQL 加進佇列
+
+### 主明細順序
+
+在主明細（Master-Detail）架構下，SQL 執行順序大致是：
+
+```
+1. Master Delete SQL（如有）
+2. Master Update SQL（如有）
+3. Master Insert SQL（含 onAfterInsert 加的 SQL）
+4. Detail Delete SQL
+5. Detail Update SQL（含明細 onAfterUpdate 加的 SQL）
+6. Detail Insert SQL
+7. InfoTransaction（TRS）產生的 SQL
+```
+
+**結果**：如果在 Detail 的 `onAfterUpdate` 寫「依明細狀態回寫主檔」，此時 Master SQL 早就跑完了 → 回寫邏輯會檢查到**未更新前**的明細。
+
+### 解法
+
+要在主明細資料都異動完成後才處理時，在**主檔 DataForm 的 `onApplied`** 觸發 ServerMethod 回寫：
+
+```javascript
+function dfMaster_onApplied(data) {
+    // 主明細都已 commit，此時呼叫 serverMethod 回寫
+    $.callMethod('模組', '回寫主檔', [data.USER_ID]);
+}
+```
+
+### 觸發規則
+
+| 事件 | 主明細下的觸發時機 |
+|------|-------------------|
+| **主檔 UpdateComponent `onAfterApplied`** | ✅ 會觸發（Transaction Commit 之後） |
+| **明細 UpdateComponent `onAfterApplied`** | ❌ **不會觸發**（只主檔的會） |
+| **主/明細 `onBeforeApply` / `onAfterApply`** | ✅ 各自觸發 |
+
+## InfoTransaction（TRS）搭配
+
+> 來源：[#482459](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482459) / [#482386](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482386) / [#469257](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469257) / [#472634](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472634)
+
+跨 Table / 跨 DB 的連動寫入，**優先用 TRS 而非自寫 ServerMethod**。
+
+### TRS 的 5 種 TransMode
+
+| TransMode | 說明 |
+|-----------|------|
+| **AutoAppend** | 以 `TransKeyFields` 找目標表，**找到則 Update、找不到則 Insert** |
+| **SyncAppend** | 類似 AutoAppend，但資料異動與原表格同步（新增、修改、**刪除**） |
+| **WhenDelete** | 原表刪除時才觸發（配 SyncAppend） |
+| **WhenInsert** | 原表新增時才觸發 |
+| **WhenUpdate** | 原表修改時才觸發 |
+
+### 典型情境
+
+**需求**：刪除 A 表某筆資料，自動刪除 B 表中對應 KEY 值的資料
+
+**TRS 設定**：
+```
+TargetTable:     B表
+TransMode:       SyncAppend + WhenDelete
+TransKeyFields:  KEY
+AppendMode:      Delete
+```
+
+### 限制與技巧
+
+- **USERS 等系統表在 TargetTable 下拉選不到** — 需**手動輸入表名**（[#469257](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469257)）
+- **跨 DB INSERT** — 設定 TargetTable 時指定不同的 Database 連線（[#472634](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472634)）
+- TRS 的設計介面比 ServerMethod 更直覺，但屬性較複雜
+
+## DataPanel 呼叫 UpdateComponent 的條件
+
+> 來源：[#482410](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482410)
+
+**要求**：DataPanel 必須與 DataForm **相同 RemoteName**。
+
+若要把不同表的欄位一起編輯：
+1. 在 InfoCommand 用 **LEFT JOIN** 把外部表欄位併進來
+2. 在 UpdateComponent 把外部表欄位的 `insertEnable` / `updateEnable` **設為 false**（僅顯示不寫入）
+3. 這樣 DataPanel 顯示所有欄位，但 Update 只影響主表
+
+## XSS 驗證進階用法
+
+> 來源：[#473029](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473029) / [#473697](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473697) / [#482032](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482032)
+
+### 驗證位置
+
+前端實作：`EEPWebClient.Core/wwwroot/js/infolight/jquery.infolight.validate.js`
+
+### 多處設定要同步
+
+若一筆資料會同時經過 DataGrid 顯示與 UpdateComponent 寫入，**兩邊都要關**才能完整支援越南文 / 泰文 / 特殊字元：
+
+```json
+// DataGrid
+{ "type": "datagrid", "validateXss": false }
+
+// UpdateComponent
+{ "type": "updatecomponent", "validateXss": false }
+```
+
+### 全域覆寫（系統頁面用）
+
+若要修改系統頁面（如 `Sysusers.cshtml`）的 XSS 行為，在**主頁原始碼**（EEP 的主頁原始碼覆寫機制）注入：
+
+```javascript
+// 完全關閉 XSS 驗證（直接 pass through 原值）
+$.validateScript = function (value) {
+    return value;
+};
+```
+
+## Flow 相關陷阱
+
+### FlowFlag 欄位存檔後為空（[#473801](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473801)）
+
+**症狀**：自建表單新增存檔，`FLOWINSTANCE` / `FLOWHISTORY` 的 InstanceID 正常，但主表 `FlowFlag` 欄位**空白**。
+
+**原因**：流程活動的 **`Title` 屬性沒填**。
+
+**解法**：確認 Flow 活動的 Title 屬性已設定值。
+
+### onAfterInsert 內 UPDATE 欄位，Flow 讀不到（[#482130](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482130)）
+
+**症狀**：表單有 AutoNumber 自動編號欄位，在 `onAfterInsert` 用 UPDATE 組合「單號+版次」寫進另一欄位（FLOWNO），Flow 判斷用不到這個值。
+
+**原因**：事件產生的 UPDATE 和 Flow 抓資料可能**不在同一個 Transaction**。
+
+**官方建議**：不要開新欄位紀錄組合值，改用 **InfoCommand 虛擬欄位**（用 SQL 拼接即時計算）。若 FLOWNO 需要當 Key，直接讓「單號 + 版次」雙 Key 也能達成。
+
+### 審核中單據刪除控制（[#481945](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481945)）
+
+**要件**：
+1. 表單掛載在**選單**上（Menu）
+2. 設定**流程參數**
+3. Mode 為 **預備**
+
+若複製 InfoCommand / UpdateComponent 做另一個 RWD（常用於不同 SecField），審核中刪除的自動控制**需要重複上述設定**。
+
+## Identity 自增值取得時機
+
+> 來源：[#470099](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=470099)
+
+INT IDENTITY 自增值**不能在 INSERT SQL 中取得**。正確做法是在主檔 `onApplied` reload datagrid，系統會把資料庫產生的 ID 帶回：
+
+```javascript
+function dfMaster_onApplied(data) {
+    // 系統已自動 reload 取回 Identity，此處 data 含最新 ID
+    console.log(data.inserted[0].ID);  // Identity 值
+}
+```
+
+## 例外訊息顯示 InnerException
+
+> 來源：[#469106](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469106)
+
+**問題**：`throw new Exception("訊息")` 時，前端顯示的是外層 Exception 而非 InnerException。
+
+**解法**（需改 `DataProvider.cs`，**非公版**）：
+
+```csharp
+// 在 catch 區塊中
+catch (Exception ex) {
+    var msg = ex.InnerException?.Message ?? ex.Message;
+    throw new Exception(msg);
+}
+```
+
+## SecColumns Encryption UI 限制
+
+> 來源：[#481353](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481353)
+
+**症狀**：官方文件提到 SecColumns 可設 `Encryption`，但 UpdateComponent / InfoCommand 的 Collection Editor 實際**找不到此勾選框**（SP6/SP7 UI 未暴露）。
+
+**暫時解法**：直接編輯模組 JSON 加入 `"encryption": true`：
+
+```json
+"secColumns": [
+  { "field": "SALARY", "users": "admin", "groups": "HR", "encryption": true }
+]
+```
+
+## 常見陷阱與限制（討論區彙整）
+
+| 陷阱 / 限制 | 說明 | 解法 | 來源 |
+|------------|------|------|------|
+| **事件 SQL 非即時執行** | `sqls.Add()` 只是加入清單 | 接受此機制，不要試著在事件中直接執行 SQL | [#473877](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473877) |
+| **Detail onAfterUpdate 回寫 Master 看到舊資料** | 執行順序 Master 先於 Detail 事件 | 改用 Master `onApplied` + ServerMethod | [#471374](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=471374) |
+| **明細 UpdateComponent `onAfterApplied` 不觸發** | 只主檔觸發 | 需要時改在 onApplied 或 onAfterApply | [#472657](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=472657) |
+| **`GetOldRow` 回傳 null** | `GetComponent` 參數寫錯（非 UpdateComponent id） | 確認參數是 UpdateComponent 的 `id` | [#482517](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482517) |
+| **DataPanel 無法寫入 DB** | 與 DataForm 不同 RemoteName | 同 RemoteName + LEFT JOIN + 欄位 enable=false | [#482410](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482410) |
+| **FlowFlag 欄位空白** | 流程活動 Title 屬性未填 | 填 Title | [#473801](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473801) |
+| **onAfterInsert 補欄位，Flow 讀不到** | 可能不在同一 Trans | 改用 InfoCommand 虛擬欄位拼接 | [#482130](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482130) |
+| **特殊字元存不進去** | DataGrid / UpdateComponent 的 validateXss 各自預設 true | 兩邊都要設 false | [#482032](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482032) |
+| **Identity 自增值拿不到** | INSERT 執行中無法取得 | `onApplied` reload 後取得 | [#470099](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=470099) |
+| **Exception 顯示外層訊息** | 框架優先顯示 Exception.Message | 改 `DataProvider.cs` 的 catch（非公版） | [#469106](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469106) |
+| **SecColumns Encryption UI 看不到** | SP6/SP7 Collection Editor 未暴露此選項 | 直接編輯模組 JSON | [#481353](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481353) |
+| **TRS TargetTable 選不到系統表** | 下拉過濾掉了 | 手動輸入表名（例如 `USERS`） | [#469257](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=469257) |
+| **審核中單據無法套用刪除控制** | 表單沒掛選單 / 流程參數沒設 | 檢查選單掛載 + 流程參數 + 預備模式 | [#481945](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481945) |
+| **全域變數只能存字串** | `$.setVariableValue` / `ClientInfo.Variables` 是 string | 物件/陣列要先 JSON.stringify | [#474147](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474147) |
+
 ## 常用方法
 
 事件方法中透過 `sender as UpdateComponent` 取得：
