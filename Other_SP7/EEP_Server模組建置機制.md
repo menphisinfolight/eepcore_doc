@@ -508,12 +508,25 @@ public object TestOleDb()
 
 ### Clean 的正確流程
 
-```bash
-# 1. 停 Web（釋放 file lock）
-iisreset /stop                          # IIS
-# 或：關掉 dotnet EEPWebClient.Core.dll 的 console / kill process
+EEP 標準啟動方式是 **`start.bat`**（跑 Kestrel dotnet process，非 IIS）：
 
-# 2. 關閉 VS / VS Code（若有開著 EEPCore 方案）
+```
+EEPWebClient.Core/start.bat
+  @echo off
+  start http://localhost:4438/design
+  dotnet bin/debug/net8.0/EEPWebClient.Core.dll --urls http://0.0.0.0:4438
+  @pause
+```
+
+所以「停 Web 釋放 file lock」的正確作法是**關閉 start.bat 的 console 視窗**（不是 `iisreset`）。
+
+```bash
+# 1. 停 Web（釋放 bin/ 下 DLL 的 file lock）
+#    → 關閉 start.bat 的 console 視窗
+#    或按 Ctrl+C
+#    極端手段：taskkill /f /im dotnet.exe
+
+# 2. 關閉 VS / VS Code（若有開著 EEPCore 方案，會 hold .dll）
 
 # 3. Clean 整個方案
 cd EEPCore   # solution 根目錄
@@ -534,10 +547,24 @@ dotnet build
 
 # 或 Visual Studio: Build → Rebuild Solution
 
-# 6. 重啟 Web
-iisreset /start
-# 或 重跑 dotnet run / IIS Express
+# 6. 重啟 Web —— 回到 EEPWebClient.Core 資料夾執行 start.bat
+cd EEPWebClient.Core
+start.bat
 ```
+
+### 若正式環境是用 IIS 部署
+
+正式機透過 IIS 部署時（官方手冊的正式環境作法），停 / 啟動 Web 的指令是：
+
+```bash
+iisreset /stop            # 停
+iisreset /start           # 啟
+# 或針對單一 App Pool：
+%windir%\system32\inetsrv\appcmd stop  apppool "EEPAppPool"
+%windir%\system32\inetsrv\appcmd start apppool "EEPAppPool"
+```
+
+**但開發 / 測試環境預設是 `start.bat`**，不用 IIS。多數踩坑的情境都是開發期在 Kestrel 下發生的，以 `start.bat` 為主。
 
 ### 何時必須 Clean（而不只是 Build）
 
@@ -565,7 +592,7 @@ iisreset /start
 照順序排查：
 
 1. [ ] **EEPGlobal.Core 有重新 build 嗎？** 檢查 `EEPWebClient.Core/bin/Debug/net8.0/EEPGlobal.Core.dll` 的時間戳
-2. [ ] **Web 有重啟嗎？** `iisreset` 或 kill Kestrel 重跑
+2. [ ] **Web 有重啟嗎？** 關閉 `start.bat` 的 console 再重跑（正式機 IIS 的話 `iisreset`）
 3. [ ] **有 clean 嗎？** 若仍沒效果，`dotnet clean` + 刪 `bin/obj` 再 build
 4. [ ] **對 Server 端有重新存檔嗎？** UserModule.cs 只反映「最後存檔」，沒存檔前看到的是舊版
 5. [ ] **VS Code 還開著嗎？** 可能 hold DLL lock
@@ -577,11 +604,12 @@ iisreset /start
 > 「直接重新存檔還是沒有出現，但是我把**整個 EEPCore 重新建置一次**再存檔就有了」
 
 順序：
-1. Clean EEPCore solution
-2. Build 所有專案（至少 EEPGlobal.Core、EEPServerTools.Core、EEPWebClient.Core、EEPServer.Core）
-3. **重啟 Web**
-4. 回到 EEP 設計介面，對使用該 using 的 Server 模組**重新存檔**
-5. 這時 UserModule.cs 才會用新的 AppendUsing 包裝
+1. **關閉 `start.bat` 的 console**（停 Web、釋放 DLL lock）
+2. Clean EEPCore solution（`dotnet clean` 或刪 `bin/obj`）
+3. Build 所有專案（至少 EEPGlobal.Core、EEPServerTools.Core、EEPWebClient.Core、EEPServer.Core）
+4. **重新跑 `start.bat`**
+5. 回到 EEP 設計介面，對使用該 using 的 Server 模組**重新存檔**
+6. 這時 UserModule.cs 才會用新的 AppendUsing 包裝
 
 ## 相關討論區（建置 / Clean 類）
 
