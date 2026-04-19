@@ -53,28 +53,28 @@ $.getScript('/design/bootstrap/{方案}/biz-helpers.js');
 
 把 `common-utils.js` / `biz-helpers.js` 放同目錄（`design/bootstrap/{方案}/` 下）即可，同樣屬客製資料不會被升級覆蓋。
 
-## 不推薦的做法
+## 其他可行做法（適用情境較窄）
 
-### ❌ 改 `Views/Design/Index.cshtml` 的 `<head>` 加 `<script>`
+### 改 `Views/Design/Index.cshtml` 的 `<head>` 加 `<script>`
 
-[#473178](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473178) 官方原始答覆，但有幾個問題：
+可行，但要留意：
 
-- 屬**框架檔案，升級會被覆蓋**，要維護升級 checklist
+- 屬**框架檔案，升級會被覆蓋**，需要維護升級 checklist
 - Publish 環境要 **rebuild**
-- `Views/Design/*.cshtml` 是設計介面頁面，不是 RWD Runtime —  動它不見得影響使用者看到的 RWD 頁
-- 要 Runtime 生效得改 `Views/Home/*.cshtml` 才對
+- `Views/Design/*.cshtml` 是設計介面頁面，不是 RWD Runtime —  動它影響的是設計階段，未必影響使用者最終看到的 RWD 頁
+- 要 Runtime 生效得改 `Views/Home/*.cshtml`
 
-**只在**以下情況考慮：
-- `_global.js` 不適用（例如要影響所有方案 / 登入前 Logon 頁）
-- 已接受升級 checklist 的成本
+**適用情境**：
+- `_global.js` 不夠用（例如要影響所有方案 / 登入前 Logon 頁）
+- 已接受升級 checklist 的維護成本
 
-### ❌ 用 Literal 元件放 `<script src="">`
+### 用 Literal 元件放 `<script src="">`
 
-客戶原本在 [#473178](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473178) 提到的方向。問題：
+可行，但要留意：
 
 - **每個 RWD 頁都要手動加 Literal** 才會載入
 - 沒有「一次引用全頁面生效」的效果
-- 只適合「1-2 頁需要特殊 JS」的情境
+- 適合「1-2 頁需要特殊 JS」的情境，不適合全站共用
 
 ## 特殊情況：登入前（Logon 頁）也要用
 
@@ -248,8 +248,8 @@ EEP 寫在 `_global.js` 裡的 `$.getScript`，本質上就是「頁面載入 `_
 
 | ID | 日期 | 主題 |
 |----|------|------|
-| [#473178](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473178) | 2024-01-09 | 共用 js 檔的作法（官方答覆：改 Index.cshtml，非最佳解） |
+| [#473178](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473178) | 2024-01-09 | 共用 js 檔的作法（討論多種做法的取捨） |
 
 ## 推薦一句話
 
-**共用 JS 寫在 `design/bootstrap/{方案}/_global.js`，用 `$.getScript` 動態載入其他 JS 檔。不要改 Index.cshtml。**
+**共用 JS 優先寫在 `design/bootstrap/{方案}/_global.js`，用 `$.getScript` 動態載入其他 JS 檔，可避開升級覆蓋問題。**
