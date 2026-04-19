@@ -331,7 +331,7 @@ EEPWebClient.Core/emailError.log
 | **Body 純文字意外渲染為 HTML** | `IsBodyHtml = true` 寫死 | 若要純文字，HTML escape `< > &` 或用 `<pre>` 包 | 原始碼 L94 |
 | **附件 .msg 檔案亂碼** | FileUpload 處理 .msg 問題 | 設定 FileUpload 的 `DropEnable = false` | [#481153](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481153) |
 | **排程寄信不定時漏信** | SMTP 被 throttle / 連線釋放太快 | 迴圈中加 `Thread.Sleep` 或改 `Task.Delay` | [#474225](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=474225) |
-| **delaySendMail 排程不觸發** | Schedule.Core.exe 沒啟動（見 EEP_Schedule機制 文件） | 確認 exe 在跑 / 看 SYS_SCHEDULE_LOG | [#471182](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=471182) |
+| **delaySendMail 排程不觸發** | Schedule.Core.exe 沒啟動（見 Schedule排程機制 文件） | 確認 exe 在跑 / 看 SYS_SCHEDULE_LOG | [#471182](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=471182) |
 | **Email subject not set** | 流程呈送時 Subject 空值 | 流程活動設定 Email 屬性時 Subject 必填 | [#480427](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=480427) |
 | **InfoMail 元件只能放固定附件** | 設計介面 Attachments 是靜態集合 | 程式中 `.Attachments.Add(...)` 動態加（範例 4） | [#478962](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=478962) |
 | **附件路徑用絕對 / 相對路徑** | 相對路徑以 EEPWebClient.Core 根目錄為基準 | 建議用 `design/files/xxx` 或絕對路徑 | 原始碼 L122 |

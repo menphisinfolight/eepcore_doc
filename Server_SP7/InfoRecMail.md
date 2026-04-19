@@ -190,7 +190,7 @@ public object ProcessApprovalMails()
 
 ### 4. 搭配排程定期讀信
 
-**設計**：在 SYS_SCHEDULE 建一筆排程，Method 填 `模組名.ReceiveAndCreateTickets`，Type=interval，Setting=10（每 10 分鐘跑一次）。配合 `Schedule.Core.exe` 或 `ScheduleHelper` 啟動（見 [EEP_Schedule機制](../其他(SP7)/EEP_Schedule機制.md)）。
+**設計**：在 SYS_SCHEDULE 建一筆排程，Method 填 `模組名.ReceiveAndCreateTickets`，Type=interval，Setting=10（每 10 分鐘跑一次）。配合 `Schedule.Core.exe` 或 `ScheduleHelper` 啟動（見 [Schedule排程機制](../Other_SP7/Schedule排程機制.md)）。
 
 ```csharp
 // 排程呼叫的 method（不接受 row 參數，或接受空參數）
