@@ -185,7 +185,7 @@ Word 報表中的流程簽核區塊使用固定欄位名：
 - Word 範本支援 `.xlsx` 副檔名：若範本為 Excel 格式，會改用 `Parser.PreviewExcel` 產生。
 - `ExportWordAll` 使用暫存資料夾 + `ZipFile` 打包，完成後刪除暫存。
 - 流程簽核紀錄中 Status=3（抽回）的記錄會被排除，不顯示在報表中。
-- Excel 匯出預設最大筆數為 1000（`queryOptions.PageSize = 1000`）。
+- Excel 匯出預設最大筆數為 1000（`queryOptions.PageSize = 1000`）。呼叫端若在 `ExportExcelOptions.PageSize` 傳 `> 0` 的值會覆寫此預設。完整隱藏限制清單見《[SP7 預設限制值對照表](../Other_SP7/SP7_預設限制值對照表.md)》。
 - `GetWordColdef` 和 `GetExcelColRows` 分別從 `coldef`（SYS_DOCFILES 相關）和 `SYS_XLSFILES` 取得欄位格式設定。
 - 支援 PDF 輸出（密碼保護、浮水印），由 `Parser` Adapter 實作轉換。
 - **`ExportWord`（L329-480）有冗餘/未完成的 subDetailCommands 邏輯**：
