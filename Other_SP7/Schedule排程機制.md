@@ -306,6 +306,103 @@ builder.Services.AddHostedService<ScheduleBackgroundService>();
 | **Description** | text | 成功時：方法的回傳值（字串或 JSON serialize） |
 | **Error** | text | 失敗時：`Exception.Message`（會遞迴取 `InnerException.Message`） |
 
+## 🔴 Oracle 部署陷阱：欄位大小寫敏感
+
+> 來源：[#479274](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=479274) / [#477328](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=477328)
+
+### 症狀
+
+- 設計畫面點選「排程」→ 跳 `ORA-00904: "Solution": 無效的識別碼`
+- 或執行時報 `ORA-00904: "StartDatetime": 無效的識別碼`
+- **MSSQL 環境完全沒事**，只有 Oracle 才炸
+
+### 根本原因
+
+EEP 的 SQL 查詢用了**雙引號識別碼**：
+
+```sql
+SELECT * FROM SYS_SCHEDULE WHERE "DBAlias" = N'XXX' AND "Solution" = N'YYY'
+```
+
+Oracle 的規則：
+- **無引號** → Oracle 自動轉大寫（`DBAlias` 會變 `DBALIAS`）
+- **有雙引號** → **大小寫必須完全一致**（`"DBAlias"` ≠ `"DBALIAS"`）
+
+DBA 手動建表時若用了不帶引號的 SQL（`CREATE TABLE SYS_SCHEDULE (DBAlias varchar2(50)...)`），Oracle 自動把欄位名存成 `DBALIAS`，EEP 的雙引號查詢就找不到。
+
+### 正確的建表方式（以引號保住大小寫）
+
+**SYS_SCHEDULE_LOG**（[#479274](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=479274) Roland 提供）：
+
+```sql
+BEGIN
+   createTables('SYS_SCHEDULE_LOG', 'CREATE TABLE SYS_SCHEDULE_LOG(
+       ID integer NOT NULL,
+       "StartDatetime" date NULL,
+       "Description" clob NULL,
+       "Error" clob NULL,
+       "Duration" integer NULL
+   )');
+END;
+```
+
+**SYS_SCHEDULE**（[#477328](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=477328) Roland 提供）：
+
+```sql
+BEGIN
+   createTables('SYS_SCHEDULE', 'CREATE TABLE SYS_SCHEDULE(
+       ID integer NOT NULL,
+       "Name" varchar2(50) NULL,
+       "Type" varchar2(20) NULL,
+       "Setting" clob NULL,
+       "Method" varchar2(50) NULL,
+       "Parameter" clob NULL,
+       "InvokeTime" clob NULL,
+       "UserID" varchar2(20) NULL,
+       "Solution" varchar2(20) NULL,
+       "DBAlias" varchar2(50) NULL,
+       "LastTime" varchar2(20) NULL,
+       "Disabled" char(1) NULL
+   )');
+END;
+```
+
+### 系統表 SQL 來源檔
+
+不要自己手寫，直接抄這個檔：
+
+```
+EEPWebClient.Core/wwwroot/sql/oracle/systemTables.sql
+```
+
+裡面有所有系統表的 Oracle 完整 SQL。
+
+### 建立用的 helper procedure
+
+EEP Oracle 部署需要先建好兩個 stored procedure：
+- `createTables(tableName, createSQL)` — 一般建表
+- `createTablesIdentity(...)` / `createTablesIdentity2(...)` — identity 欄位（自動處理 sequence + trigger）
+
+第一次部署 Oracle 的 EEP 系統時，要先建這幾個 helper proc 才能用上面那些 createTables 呼叫。
+
+### ⚠️ 必須在「System 類型」資料庫執行
+
+> Roland 原話（[#477328](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=477328) #4）：「排程功能，只讀取資料庫中，設定為 System 的資料表」
+
+[#479274](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=479274) 的客戶踩到的另一個坑：DBA 把建表語法跑在錯的 DB（業務 DB 而非 System DB）→ EEP 還是找不到。
+
+**檢查方式**：到 `/design` → 資料庫設定 → 確認哪個 DB 的 Type 是 `System`，所有 SYS_* 系列建表都要在那個 DB 執行。
+
+### 對策 checklist
+
+部署 Oracle 環境的 EEP 時：
+
+- [ ] 確認 EEP 識別出的 System 資料庫是哪個
+- [ ] 拿 `EEPWebClient.Core/wwwroot/sql/oracle/systemTables.sql` 為準
+- [ ] 用 `createTables(...)` 包裝建表（SQL 內欄位名要保留雙引號）
+- [ ] **不要手寫 `CREATE TABLE` 然後欄位不加引號** — Oracle 會吞引號自動轉大寫
+- [ ] 建完 SYS_SCHEDULE / SYS_SCHEDULE_LOG，到 `/design` 點「排程」確認沒跳 ORA-00904
+
 ## Method 執行路徑
 
 ```
@@ -594,6 +691,12 @@ dotnet publish Schedule.Core/Schedule.Core.csproj -c Release -f net8.0
 | **🔴 用 Schedule.Core.exe 無法偵錯** | 獨立 process，斷點難接、熱重載無效、Console log 可視性差、例外堆疊被吃掉 | 開發/測試階段改用方式 B（Startup.cs 取消註解），驗證完再進正式 |
 | **🔴 30 秒輪巡同分鐘觸發 2 次** | 官方規格，非 bug（來源：#478942） | ServerMethod 寫成冪等；或自行加鎖 |
 | **🔴 客製 dll 排程跑不到** | Schedule.Core.exe 有獨立 bin 目錄，不共享 Web 的 dll | 把 dll 放 `Schedule.Core\bin\Debug\net8.0`；或改用方式 B 避開 |
+| **🔴 Oracle 點選排程跳 ORA-00904** | 雙引號識別碼大小寫敏感，DBA 自動轉大寫會打掛 EEP 查詢（#479274 / #477328） | 用 `wwwroot/sql/oracle/systemTables.sql` 重建；確認在 System 資料庫 |
+| **Schedule.Core.exe 卡死後重啟新的還是不跑** | 舊 process 沒被殺掉，兩個 exe 互相干擾（#480652） | 工作管理員確認舊 Schedule.Core.exe 結束後再重啟 |
+| **手動測試 OK、自動排程不跑** | 沒啟動 exe 也沒取消 Startup.cs 註解（#482170） | 確認排程引擎已啟動 |
+| **自動起單失敗、手動起單 OK** | 自動起單拿不到當前使用者，要在程式內顯式定義 user/url（#477391 / #476301 / #478706） | ServerMethod 內手動補 `this.client.user` 和 url 參數 |
+| **登出 server 後 Schedule.Core 跟著停** | 互動 console 在使用者 session 下被殺（#482170） | 包成 Windows 服務、設開機自動啟動 |
+| **Console 視窗被點選時排程暫停** | Windows console 被選取會進入「快速編輯」模式阻塞輸出（#476328） | 關閉 console 的快速編輯模式；或包成 Windows 服務避免 console |
 | **「測試」按鈕 OK、自動排程失敗** | 測試走 Web process，排程走 exe process，dll 不一致 | 檢查 Schedule.Core 的 bin 目錄；或確認 exe 是否有啟動 |
 | **interval 不是整點觸發** | interval 以「完成時間」起算，官方不改（來源：#481152 / #476305） | 改用 weekly + 多個 InvokeTime；或多筆排程 |
 | **每月 31 日 ≠ 每月最後一天** | 2 月沒有 31 日 → 永遠不執行 | 設 28,29,30,31 + ServerMethod 判斷最後一天 |
@@ -636,6 +739,15 @@ dotnet publish Schedule.Core/Schedule.Core.csproj -c Release -f net8.0
 | [#481445](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481445) | 2025-09-10 | 設定排程自動起單 |
 | [#481100](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481100) | 2025-07-29 | 自動起單 SubmitFlow 缺 url 參數 |
 
+### Oracle / 部署環境
+
+| ID | 日期 | 主題 |
+|----|------|------|
+| [#477328](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=477328) | 2024-11-04 | **Oracle DB 排程設定錯誤 ORA-00904** — 雙引號大小寫陷阱、需在 System DB 執行 |
+| [#479274](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=479274) | 2025-04-09 | **點選排程跳 ORA-00904** — SYS_SCHEDULE_LOG 重建 SQL |
+| [#480652](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=480652) | 2025-05-29 | 排程突然停止（Schedule.Core.exe 卡死、舊 process 殘留）|
+| [#482170](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482170) | 2026-01-07 | 手動測試 OK 自動不跑、Schedule.exe 包 Windows 服務 |
+
 ### 升級 / 部署
 
 | ID | 日期 | 主題 |
@@ -653,14 +765,20 @@ dotnet publish Schedule.Core/Schedule.Core.csproj -c Release -f net8.0
 | [#482048](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=482048) | 2025-12-12 | 排程未執行（手動 OK、自動不跑） |
 | [#479133](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=479133) | 2025-03-18 | 排程送入流程 |
 | [#481769](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481769) | 2025-11-08 | 排程測試「流程已經存在」 |
+| [#477391](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=477391) | 2024-11-13 | 手動 vs 自動起單差異（自動拿不到當前使用者，要在程式內定義 user/url） |
+| [#476301](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=476301) | 2024-09 | 自動起單需顯式傳 url 參數 |
+| [#478706](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=478706) | 2025-01-09 | 排程啟單 userid 沒取到 |
 
 ### 其他
 
 | ID | 日期 | 主題 |
 |----|------|------|
 | [#479301](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=479301) | 2025-04-15 | 排程寫 90000 筆 USERS 影響 design |
-| [#476301](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=476301) | 2024-09 | 排程相關問題（虹光精密） |
 | [#476305](https://www.infolight.com/cloud_andyhome_bootstrap/DISCUSSDT?type=010&id=476305) | 2024-09 | interval 規格說明（早期討論） |
+| [#476328](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=476328) | 2024-10-28 | Console 視窗被選取時排程暫停（快速編輯模式陷阱） |
+| [#481514](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481514) | 2025-09-18 | 是否可在 Client 網頁執行排程？（建議改 ServerMethod + DataForm OnApply） |
+| [#478415](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=478415) | 2024-11-28 | 排程執行時 server 取得當前模式值 |
+| [#478933](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=478933) | 2025-02-10 | 排程必須開著 Schedule.Core.exe 才會跑 |
 
 ## 參考檔案路徑
 
