@@ -163,24 +163,3 @@ SP7 已主動在該 endpoint 加 `[RequestFormLimits(MultipartBodyLengthLimit = 
 ### 14. ChatProvider Timeout（10 分）
 
 **常見情境**：呼叫 GPT/Claude 長回應或 streaming 一開始就被中斷。10 分鐘通常夠用，除非跑 long-thinking 的 model。
-
----
-
-## 如何維護這份表
-
-- **新增條目**：補一行到對照表，再視情況加一段細節說明。欄位：項目 / 預設值 / 調整方式 / 位置（含行號）。
-- **行號漂移**：SP7 升版後行號會動，維護時以 grep 重找（關鍵字：`PageSize`、`CommandTimeout`、`maxAllowedContentLength`、`MultipartBodyLengthLimit`、`IdleTimeout`、`refreshLogon` 等）。
-- **不要複製到別處**：各元件 doc 只要 cross-reference 回這份表（例如 `ParserHelper.md` 備註末端加一句「完整限制清單見《SP7 預設限制值對照表》」），不要把條目複製貼到每支元件 doc。
-
----
-
-## 候選（待補 / 待確認）
-
-以下是可能存在但本版尚未確認的預設值，之後確認後再補：
-
-- RWD 表單 `Datagrid` 預設 PageSize
-- 檔案附件下載緩衝大小
-- 流程簽核並發上限
-- Log 保留天數
-- `.security` 檔規則數量上限
-- 其他客戶端 ping / polling 頻率（notify、messenger、todo 等）
