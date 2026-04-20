@@ -5,13 +5,13 @@
 
 > 🏷️ **選購模組功能**：InfoPush 屬於 **MAUI / APP 模組** 的配套元件（討論區 [#471492](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=471492)：「[訊息] 主要是提供予 [APP 模組] 接收推播訊息作使用」）。未購買 APP 模組的部署可以放 InfoPush 元件，但推播不會到達手機。
 >
-> ⚠️ **SP7 原始碼狀態：Send() 被閹割**。InfoPush.cs:59 的 `PushHelper.Send(...)` 呼叫已被註解，實際執行時固定 `return ""`，不會真的推播。真正的推播路徑是 `PushHelper.sendPushNotification`（見 [#475009](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=475009)）。此元件在 SP7 可視為 **stub / 保留欄位**，想推播要走 PushHelper 或 FlowNotify 的推播路徑。
+> ℹ️ **公版原始碼中的 `PushHelper` 呼叫為註解狀態**（`InfoPush.cs:59`），推測選購 MAUI 模組時，安裝包會啟用該呼叫或以完整版取代此檔案。公版環境下 `Send()` 會固定 `return ""`；若需在非 MAUI 環境下推播，改走 `PushHelper.sendPushNotification`（見 [#475009](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=475009)）。
 
 ## 用途
 
 **推播通知元件**（Info Push）。
 
-設計時間在 Server 模組中宣告推播對象（UserList）、標題、內文、徽章數、連結；執行時原本由 `PushHelper` 呼叫 Firebase Cloud Messaging（FCM）發送到使用者的 MAUI / Android / iOS App。**SP7 實際行為請見上方警告**。
+設計時間在 Server 模組中宣告推播對象（UserList）、標題、內文、徽章數、連結；執行時由 `PushHelper` 呼叫 Firebase Cloud Messaging（FCM）發送到使用者的 MAUI / Android / iOS App。
 
 ## JSON 設定範例
 
@@ -67,7 +67,7 @@
 > - 舊版 JSON key：`toUser` / `title` / `message` / `link`（camelCase）
 > - SP7 C# 版 JSON key：`UserList` / `Title` / `Body` / `Link`（PascalCase）— 見 `InfoPush.cs:33-56`
 >
-> 移植到 SP7 時欄位名要改。而且 SP7 Send() 方法本身目前不會執行推播（見頂端警告）；真要推播請改呼叫 `PushHelper.sendPushNotification`。
+> 移植到 SP7 時欄位名要改。公版 Send() 為 stub（見頂端說明）；若未購買 MAUI 模組但仍需推播，改呼叫 `PushHelper.sendPushNotification`。
 
 ### 範例 1：推播給單一使用者（來源 [#468471](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=468471)，舊 JS 版）
 
@@ -145,6 +145,6 @@ CallMethod("sendPushNotification", new JObject {
 
 ## 備註
 
-- 繼承自 `ServerComponent`，可存取 `ClientInfo` 等伺服器端上下文資訊（但實際推播請走 `PushHelper`）。
+- 繼承自 `ServerComponent`，可存取 `ClientInfo` 等伺服器端上下文資訊。
 - `Count` 使用 `[NumberboxEditor(1, true, 1)]`，第一個參數為預設值 1，第二個為是否必填（true），第三個為遞增步長 1。
 - 主頁 [訊息] 區塊（`EEPWebClient.Core/Views/Main/Sysmessage.cshtml`）也是 APP 模組的推播收件匣；沒買 APP 模組時也可以直接改此 view 做一般系統通知（[#471492](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=471492) 官方建議）。
