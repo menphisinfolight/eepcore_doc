@@ -62,13 +62,6 @@
 
 ## 實際使用範例（討論區彙整）
 
-> 原始碼倉 `/mnt/d/EEPCore_SP7_TEST` 沒有 InfoPush 的使用範例；以下來自討論區 2023 年的實戰。**這些範例全部是舊 EEP.NET Framework 版 JavaScript ServerMethod**，寫法與 SP7 C# ServerMethod 不同 ——
->
-> - 舊版 JSON key：`toUser` / `title` / `message` / `link`（camelCase）
-> - SP7 C# 版 JSON key：`UserList` / `Title` / `Body` / `Link`（PascalCase）— 見 `InfoPush.cs:33-56`
->
-> 移植到 SP7 時欄位名要改。公版 Send() 為 stub（見頂端說明）；若未購買 MAUI 模組但仍需推播，改呼叫 `PushHelper.sendPushNotification`。
-
 ### 範例 1：推播給單一使用者（來源 [#468471](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=468471)，舊 JS 版）
 
 ```javascript
