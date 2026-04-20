@@ -279,32 +279,23 @@ builder.Services.AddHostedService<ScheduleBackgroundService>();
 | Console Log | 有（同時有 `Log` / `LogError`） | 有（完全相同實作） |
 | 外部終止 | `Console.ReadLine()` 等 `CLOSE` | 無（由 host 控制生命週期） |
 
-## SYS_SCHEDULE 表欄位
+## 資料表（速查）
 
-| 欄位 | 類型 | 說明 |
-|------|------|------|
-| **ID** | int identity | 主鍵 |
-| **Name** | nvarchar(50) | 排程名稱（顯示用） |
-| **Type** | varchar(20) | `interval` / `weekly` / `monthly` |
-| **Setting** | text | Type 對應設定：<br>- interval：**分鐘數**（int）<br>- weekly：`0,2,4` 星期幾（0=Sun, 6=Sat，逗號分隔）<br>- monthly：`1,15` 幾號（1-31，逗號分隔） |
-| **InvokeTime** | text | 執行時間：<br>- interval：`HH:mm,HH:mm` 開窗/閉窗時段（空字串 = 全天可跑）<br>- weekly / monthly：`HH:mm` 執行時間（支援多個，逗號分隔） |
-| **Method** | nvarchar(50) | 要執行的方法：<br>- `ModuleName.MethodName` — 呼叫模組 ServerMethod<br>- `PROC.ProcessorName` — 呼叫 Processor |
-| **Parameter** | text | JSON 物件字串，轉 `JObject` 傳給方法 |
-| **UserID** | varchar(20) | 建立者（顯示用） |
-| **Solution** | nvarchar(20) | 方案（多租戶隔離，傳入 `ClientInfo.Solution`） |
-| **DBAlias** | nvarchar(50) | 目標資料庫別名（傳入 `ClientInfo.Database`） |
-| **LastTime** | bigint | 上次成功執行的 Unix timestamp（毫秒）；NULL = 從未執行 |
-| **Disabled** | bit | true 時跳過 |
+排程資料存在兩張系統資料表。這裡只列「讀機制時最常需要當場確認」的幾個關鍵欄位含義，完整欄位、跨資料庫型別、生命週期請看資料表文件。
 
-## SYS_SCHEDULE_LOG 表欄位
+**`SYS_SCHEDULE`**（排程任務定義）：
 
-| 欄位 | 類型 | 說明 |
-|------|------|------|
-| **ID** | int | 對應 SYS_SCHEDULE.ID |
-| **StartDatetime** | datetime | 執行開始時間（`yyyy/MM/dd HH:mm:ss`） |
-| **Duration** | int | 執行毫秒數（endTime - startTime） |
-| **Description** | text | 成功時：方法的回傳值（字串或 JSON serialize） |
-| **Error** | text | 失敗時：`Exception.Message`（會遞迴取 `InnerException.Message`） |
+| 欄位 | 關鍵語意 |
+|------|---------|
+| **Type** | `interval` / `daily` / `weekly` / `monthly` — 決定 Setting、InvokeTime 的格式 |
+| **Setting** | interval：分鐘數　／　daily：不使用　／　weekly：`0,2,4`（0=Sun）　／　monthly：`1,15` |
+| **InvokeTime** | interval：`HH:mm,HH:mm` 開窗時段（空 = 全天）　／　daily/weekly/monthly：`HH:mm[,HH:mm,...]` 觸發時刻 |
+| **Method** | `模組.方法` → `CallMethod`　／　`PROC.方法` → `CallProcessorMethod` |
+| **LastTime** | Unix timestamp（毫秒），`DateTime.MaxValue` 代表 interval 鎖定中 |
+
+**`SYS_SCHEDULE_LOG`** 記錄 `StartDatetime` / `Duration` / `Description`（成功回傳）/ `Error`。
+
+👉 完整欄位定義 / 跨 DB 型別 / 主鍵結構：[SYS_SCHEDULE](../EEP%20Core系統資料表/SYS_SCHEDULE.md)、[SYS_SCHEDULE_LOG](../EEP%20Core系統資料表/SYS_SCHEDULE_LOG.md)
 
 ## 🔴 Oracle 部署陷阱：欄位大小寫敏感
 
