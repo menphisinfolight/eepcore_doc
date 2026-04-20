@@ -7,7 +7,7 @@
 
 **自動編號元件**（Auto Number）。
 
-AutoNumber 在資料新增時自動產生不重複的流水號編號。搭配 [SYSAUTONUM](../EEP%20Core系統資料表/SYSAUTONUM.md) 系統資料表管理流水號狀態。設計師在模組 JSON 中以 `"type": "autonumber"` 宣告，綁定到 UpdateComponent，指定目標欄位和編號格式。
+AutoNumber 在資料新增時自動產生不重複的流水號編號。搭配 [SYSAUTONUM](tables.html#SYSAUTONUM) 系統資料表管理流水號狀態。設計師在模組 JSON 中以 `"type": "autonumber"` 宣告，綁定到 UpdateComponent，指定目標欄位和編號格式。
 
 ## JSON 設定範例
 

@@ -86,7 +86,7 @@ InfoRecMail 用於從郵件伺服器接收電子郵件。支援 POP3（port 995,
 
 ## C# 使用範例
 
-> 遵守 [EEP Server C# 不寫 using/namespace/class](../其他(SP7)/EEP_Server模組建置機制.md) 規則。
+> 遵守 [EEP Server C# 不寫 using/namespace/class](other_sp7.html#EEP_Server模組建置機制) 規則。
 > `InfoRecMail` 的 namespace `EEPServerTools.Core.Components` 已自動 using，可直接使用。
 
 ### 1. 基本呼叫：讀取未讀信件並回傳
@@ -190,7 +190,7 @@ public object ProcessApprovalMails()
 
 ### 4. 搭配排程定期讀信
 
-**設計**：在 SYS_SCHEDULE 建一筆排程，Method 填 `模組名.ReceiveAndCreateTickets`，Type=interval，Setting=10（每 10 分鐘跑一次）。配合 `Schedule.Core.exe` 或 `ScheduleHelper` 啟動（見 [Schedule排程機制](../Other_SP7/Schedule排程機制.md)）。
+**設計**：在 SYS_SCHEDULE 建一筆排程，Method 填 `模組名.ReceiveAndCreateTickets`，Type=interval，Setting=10（每 10 分鐘跑一次）。配合 `Schedule.Core.exe` 或 `ScheduleHelper` 啟動（見 [Schedule排程機制](other_sp7.html#Schedule排程機制)）。
 
 ```csharp
 // 排程呼叫的 method（不接受 row 參數，或接受空參數）

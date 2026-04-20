@@ -9,7 +9,7 @@
 
 InfoTransaction 實現 EEP Core 的「資料表交易」機制——當原始資料表發生 INSERT/UPDATE/DELETE 時，自動觸發對目標資料表的欄位回寫（累加、累減、替換、回寫等）。設計師在模組 JSON 中以 `"type": "infotransaction"` 宣告，無需寫程式碼即可實現跨表的資料同步。
 
-搭配 [SYS_TRSFILES](../EEP%20Core系統資料表/SYS_TRSFILES.md) 儲存交易定義。
+搭配 [SYS_TRSFILES](tables.html#SYS_TRSFILES) 儲存交易定義。
 
 ## JSON 設定範例
 

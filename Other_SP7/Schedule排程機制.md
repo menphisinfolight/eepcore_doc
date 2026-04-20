@@ -295,7 +295,7 @@ builder.Services.AddHostedService<ScheduleBackgroundService>();
 
 **`SYS_SCHEDULE_LOG`** 記錄 `StartDatetime` / `Duration` / `Description`（成功回傳）/ `Error`。
 
-👉 完整欄位定義 / 跨 DB 型別 / 主鍵結構：[SYS_SCHEDULE](../EEP%20Core系統資料表/SYS_SCHEDULE.md)、[SYS_SCHEDULE_LOG](../EEP%20Core系統資料表/SYS_SCHEDULE_LOG.md)
+👉 完整欄位定義 / 跨 DB 型別 / 主鍵結構：[SYS_SCHEDULE](tables.html#SYS_SCHEDULE)、[SYS_SCHEDULE_LOG](tables.html#SYS_SCHEDULE_LOG)
 
 ## 🔴 Oracle 部署陷阱：欄位大小寫敏感
 
@@ -778,5 +778,5 @@ dotnet publish Schedule.Core/Schedule.Core.csproj -c Release -f net8.0
 - 設計端管理：`EEPGlobal.Core/Provider/ScheduleProvider.cs`
 - 系統表 SQL 定義：相關 `systemTables.sql`
 - 相關資料表文件：
-  - [SYS_SCHEDULE](../EEP%20Core系統資料表/SYS_SCHEDULE.md)
-  - [SYS_SCHEDULE_LOG](../EEP%20Core系統資料表/SYS_SCHEDULE_LOG.md)
+  - [SYS_SCHEDULE](tables.html#SYS_SCHEDULE)
+  - [SYS_SCHEDULE_LOG](tables.html#SYS_SCHEDULE_LOG)
