@@ -12,14 +12,14 @@ DataModule 是 EEP Core 伺服器端的核心類別，負責載入模組的 JSON
 
 ## 核心屬性
 
-| 屬性 | 類型 | 說明 |
-|------|------|------|
-| `ClientInfo` | ClientInfo | 當前使用者的連線資訊（User、Database、Solution 等） |
-| `Name` | string | 模組名稱（如 `"SystemTable"`、自訂模組名） |
-| `Components` | List\<Component\> | 模組內所有元件（InfoCommand、UpdateComponent 等） |
-| `DbHelper` | DatabaseHelper | 資料庫操作工具 |
-| `Context` | HttpContext | HTTP 請求上下文 |
-| `SYSTEM_TABLE` | const string | 常數 `"SystemTable"`，系統表模組名稱 |
+| 成員 | 類型 | 存取 | 說明 |
+|------|------|------|------|
+| `ClientInfo` | ClientInfo | public get | 當前使用者的連線資訊（User、Database、Solution 等） |
+| `Name` | string | public get | 模組名稱（如 `"SystemTable"`、自訂模組名） |
+| `Context` | HttpContext | public get/set | HTTP 請求上下文 |
+| `DbHelper` | DatabaseHelper | public get / internal set | 資料庫操作工具（由 `CreateDatabaseHelper` 指派） |
+| `SYSTEM_TABLE` | const string | public | 常數 `"SystemTable"`，系統表模組名稱 |
+| `Components` | List\<Component\> | **private 欄位** | 模組內所有元件，僅能透過 `GetComponent<T>` / `GetComponents<T>` 存取 |
 
 ## 建構與載入
 
@@ -95,13 +95,19 @@ object UpdateDataset(string commandName, JArray datas, UpdateOptions options)
 ```csharp
 object CallMethod(string methodName, object parameters)
 object CallProcessorMethod(string id, JObject parameters)
+object InvokeMethod(string methodName, object[] parameters)
+List<string> GetMethods()
 ```
 
 | 方法 | 說明 |
 |------|------|
-| `CallMethod` | 載入模組 DLL（`design/server/{Solution}/{ModuleName}.Core.dll`），反射呼叫指定方法 |
-| `CallProcessorMethod` | 呼叫 Processor 介面卡，傳入連線資訊和參數 |
-| `CheckMethod` | 檢查是否允許非登入狀態呼叫（ServiceManager.NonlogonMethods） |
+| `CallMethod` | 對外入口：先 `CheckMethod` 驗證權限，再呼叫 `InvokeMethod`。**例外：`methodName == "sendPushNotification"` 會跳過 `CheckMethod`**（line 883-886） |
+| `InvokeMethod` | 載入 DLL（`design/server/{Solution}/{ModuleName}.Core.dll`），反射建立 DataModule 子類別實例（透過 `(ClientInfo, string, IEnumerable<Component>)` 建構函式），並在新實例上呼叫方法 |
+| `CallProcessorMethod` | 呼叫 Processor 介面卡，合併連線資訊、資料庫連線字串、日誌設定與 chat 設定後傳入 |
+| `CheckMethod` | 檢查是否允許非登入狀態呼叫（若模組有 ServiceManager 則看 `NonlogonMethods`；無則直接依 `ClientInfo.Nonlogon` 判斷） |
+| `GetMethods` | 反射列出模組 DLL 中 `DataModule` 子類別的所有 public instance 方法名 |
+
+特殊：若 `parameters.Length == 2` 且 `parameters[1] == "report"`，`InvokeMethod` 會把路徑從 `design/server` 改為 `design/report` 並移除該參數。
 
 ### Excel 匯出/匯入
 
@@ -118,10 +124,12 @@ object ImportXlsx(string filePath, string commandName, ImportOptions options)
 ### 預設值
 
 ```csharp
+(string valueType, JArray valueParam) GetValueItem(string defaultValue)
 string GetDefaultValue(string defaultValue)
+string GetDefaultValue(string valueType, JArray valueParam)
 ```
 
-支援三種預設值類型：
+`GetDefaultValue(string)` 先呼叫 `GetValueItem` 解析字串格式，再轉派給 `GetDefaultValue(valueType, valueParam)`。支援三種預設值類型：
 
 | 類型 | 格式 | 說明 |
 |------|------|------|
@@ -149,16 +157,35 @@ object SubmitFlow(JToken row, JToken parameters)
 
 將表單資料提交給流程引擎（Start/Submit），透過 FlowHelper.CallFlowMethod 執行。
 
+### 元件存取
+
+| 方法 | 簽名 | 說明 |
+|------|------|------|
+| `GetComponent<T>` | `T GetComponent<T>(string id)` | 取得指定 ID 和類型的元件 |
+| `GetComponent` | `Component GetComponent(string id, Type componentType)` | 非泛型版，供反射使用 |
+| `GetComponents<T>` | `IEnumerable<T> GetComponents<T>()` | 取得指定類型的所有元件 |
+| `GetDetailCommands` | `IEnumerable<InfoCommand> GetDetailCommands(string commandName)` | 取得主表的所有明細 InfoCommand（透過 InfoDataSource 關聯） |
+| `CreateComponent` | `Component CreateComponent(JObject)` / `Component CreateComponent(Type)` | 反射建立元件實例並設定 Container |
+
+### 資料庫直接操作
+
+除了 `GetDataset` / `UpdateDataset` 的 InfoCommand 封裝之外，DataModule 也開放直接下 SQL：
+
+| 方法 | 簽名 | 說明 |
+|------|------|------|
+| `CreateDatabaseHelper` | `DatabaseHelper CreateDatabaseHelper(string dbName, DatabaseType dbType, bool transaction = false)` | 建立 DatabaseHelper 並指派給 `DbHelper` 屬性 |
+| `ExecuteDataTable` | `(string dbName, string commandText, IDictionary<string, object> parameters = null, int commandTimeout = 0)` | 執行查詢回傳 DataTable |
+| `ExecuteNonQuery` | `(string dbName, string commandText, ..., int commandTimeout = 0)` | 執行單一非查詢 SQL，自動 Commit |
+| `ExecuteNonQuery`（批次） | `(string dbName, IEnumerable<string> commandTexts, int commandTimeout = 0)` | 批次執行多筆 SQL，同一 Transaction Commit |
+| `ExecuteNonQuery`（外部連線） | `(IDbConnection conn, string commandText, IDbTransaction trans, List<IDbDataParameter>? parameters)` | 使用外部傳入的連線與交易執行 |
+| `ExecStoredProc` | `(string dbName, string spName, List<IDbDataParameter> parameters)` | 執行 Stored Procedure |
+
 ### 其他
 
 | 方法 | 說明 |
 |------|------|
-| `GetComponent<T>(id)` | 取得指定 ID 和類型的元件 |
-| `GetComponents<T>()` | 取得指定類型的所有元件 |
-| `GetDetailCommands(commandName)` | 取得主表的所有明細 InfoCommand（透過 InfoDataSource 關聯） |
-| `CreateDatabaseHelper()` | 建立資料庫連線 |
-| `Echo(text)` | 偵錯日誌（寫入 DebuggerLog，記錄呼叫方法名） |
-| `GetConfig()` | 取得系統設定（ConfigHelper.GetParam） |
+| `Echo(text)` | 偵錯日誌（寫入 LogHelper.DebuggerLog，透過 StackTrace 正規表示式匹配 `UserModule\.([\w_]*)` 記錄呼叫方法名） |
+| `GetConfig()` | 取得系統設定（`ConfigHelper.GetParam()`） |
 
 ## 元件存取模式
 
