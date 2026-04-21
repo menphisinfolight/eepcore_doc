@@ -53,7 +53,47 @@ GROUPMENUS ──(GROUPID)──> GROUPS     （群組/角色）
 
 ### 跨資料庫差異
 
-各資料庫定義一致，僅 Oracle 使用 `varchar2`。GROUPID 早期為 `varchar(20)`，後透過 ALTER TABLE 擴展為 `varchar(50)`。
+#### 欄位存在度（CREATE TABLE 新裝）
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|:-:|:-:|:-:|:-:|:-:|
+| `GROUPID` / `MENUID` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`ALLOWADD`** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **`ALLOWUPDATE`** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **`ALLOWDELETE`** | ✅ | ✅ | ✅ | ❌ | ❌ |
+
+> ⚠️ **DB2 / Informix 建表腳本完全沒有 3 個 `ALLOW*` 欄位**（新裝環境就缺）。依賴新增 / 修改 / 刪除細權限的功能在這兩個 DB 上無法運作。
+
+#### 型別對照
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|-------|--------|-------|-----|----------|
+| `GROUPID` | `varchar(50)` | `varchar2(20)` ⚠️ | `varchar(20)` ⚠️ | `NVARCHAR(20)` ⚠️ | `NVARCHAR(50)` |
+| `MENUID` | `nvarchar(30)` | `varchar2(30)` | `nvarchar(30)` | `NVARCHAR(30)` | `NVARCHAR(30)` |
+| `ALLOW*` | `char(1)` | `char(1)` | `char(1)` | — | — |
+
+> ⚠️ **GROUPID 長度不一致**：MSSQL / Informix 為 50 字元，Oracle / MySQL / DB2 只有 20 字元。
+
+#### SP7 升級 ALTER ADD 矩陣
+
+| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|---------|:-:|:-:|:-:|:-:|:-:|
+| `ALLOWADD` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `ALLOWUPDATE` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `ALLOWDELETE` | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+只有 MSSQL 有升級補欄位邏輯；Oracle / MySQL 靠新裝 CREATE TABLE 已有這些欄位（舊版升級不會自動補）；**DB2 / Informix 必須手動補**。
+
+```sql
+-- DB2
+ALTER TABLE GROUPMENUS ADD COLUMN ALLOWADD CHAR(1);
+ALTER TABLE GROUPMENUS ADD COLUMN ALLOWUPDATE CHAR(1);
+ALTER TABLE GROUPMENUS ADD COLUMN ALLOWDELETE CHAR(1);
+-- Informix
+ALTER TABLE "GROUPMENUS" ADD ("ALLOWADD" CHAR(1));
+ALTER TABLE "GROUPMENUS" ADD ("ALLOWUPDATE" CHAR(1));
+ALTER TABLE "GROUPMENUS" ADD ("ALLOWDELETE" CHAR(1));
+```
 
 ---
 

@@ -37,12 +37,60 @@ SYS_XLSFILES 儲存 Excel 報表的定義，包含查詢格式、報表格式、
 
 ### 跨資料庫差異
 
-| 欄位 | SQL Server | Oracle | MySQL |
-|------|-----------|--------|-------|
-| QUERYFORMAT | `nvarchar(max)` | `clob` | `text` |
-| REPORTFORMAT | `nvarchar(max)` | `clob` | `text` |
-| HEADFORMAT | `nvarchar(max)` | `clob` | `text` |
-| XLSDATE | `datetime` | `date` | `datetime` |
+#### 欄位存在度（CREATE TABLE 新裝）
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|:-:|:-:|:-:|:-:|:-:|
+| `FILENAME` / `NAME` / `MASTERTABLE` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `MASTERCOMMAND` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`KEYFIELDS`** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **`NAMEFIELDS`** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `FIELDMAX` / `QUERYFORMAT` / `REPORTFORMAT` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`HEADFORMAT`** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `XLSDATE` / `OWNER` / `TYPE` | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+> ⚠️ 三組新裝缺欄位問題：
+> - **DB2 / Informix 缺 `KEYFIELDS` 與 `NAMEFIELDS`**（主鍵欄位 / 名稱欄位設定）
+> - **除 MSSQL 外全部 DB 都缺 `HEADFORMAT`**（Oracle / MySQL / DB2 / Informix CREATE TABLE 都沒這欄）— 只有 MSSQL 有 ALTER ADD 補上。
+
+#### 型別對照
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|-------|--------|-------|-----|----------|
+| `QUERYFORMAT` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(2000)` ⚠️ | `LVARCHAR(2000)` ⚠️ |
+| `REPORTFORMAT` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(14000)` | `LVARCHAR(14000)` |
+| `HEADFORMAT` | `nvarchar(max)` | — | — | — | — |
+| `XLSDATE` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
+
+> ⚠️ DB2 / Informix `QUERYFORMAT` 只有 2000 字元上限。
+
+#### SP7 升級 ALTER ADD 矩陣
+
+| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|---------|:-:|:-:|:-:|:-:|:-:|
+| `MASTERCOMMAND` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `TYPE` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `HEADFORMAT` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `KEYFIELDS` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `NAMEFIELDS` | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+5 個新欄位只有 MSSQL 有 ALTER；**Oracle / MySQL 全新裝 CREATE 缺 HEADFORMAT**；**DB2 / Informix 全新裝缺 KEYFIELDS / NAMEFIELDS / HEADFORMAT**。
+
+```sql
+-- Oracle / MySQL（補 HEADFORMAT）
+ALTER TABLE SYS_XLSFILES ADD HEADFORMAT clob NULL;        -- Oracle
+ALTER TABLE SYS_XLSFILES ADD HEADFORMAT text NULL;        -- MySQL
+
+-- DB2（補 3 個缺欄位）
+ALTER TABLE SYS_XLSFILES ADD COLUMN KEYFIELDS NVARCHAR(100);
+ALTER TABLE SYS_XLSFILES ADD COLUMN NAMEFIELDS NVARCHAR(100);
+ALTER TABLE SYS_XLSFILES ADD COLUMN HEADFORMAT NVARCHAR(14000);
+
+-- Informix（補 3 個缺欄位）
+ALTER TABLE "SYS_XLSFILES" ADD ("KEYFIELDS" NVARCHAR(100));
+ALTER TABLE "SYS_XLSFILES" ADD ("NAMEFIELDS" NVARCHAR(100));
+ALTER TABLE "SYS_XLSFILES" ADD ("HEADFORMAT" LVARCHAR(14000));
+```
 
 ---
 

@@ -51,7 +51,37 @@ USERMENUS ──(USERID)──> USERS      （使用者帳號）
 
 ### 跨資料庫差異
 
-各資料庫定義一致，僅 Oracle 使用 `varchar2` 取代 `varchar/nvarchar`。無特殊型別差異。
+#### 欄位存在度
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|:-:|:-:|:-:|:-:|:-:|
+| `USERID` / `MENUID` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`ALLOWADD`** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **`ALLOWUPDATE`** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **`ALLOWDELETE`** | ✅ | ✅ | ✅ | ❌ | ❌ |
+
+> ⚠️ **DB2 / Informix 缺 3 個 `ALLOW*` 欄位**（同 GROUPMENUS）。依賴細權限的 UI 會爆。
+
+#### SP7 升級 ALTER ADD 矩陣
+
+| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|---------|:-:|:-:|:-:|:-:|:-:|
+| `ALLOWADD` / `ALLOWUPDATE` / `ALLOWDELETE` | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+MSSQL 自動補；Oracle / MySQL CREATE 已含（舊版升級需手動補）；DB2 / Informix 必須手動補：
+
+```sql
+-- DB2
+ALTER TABLE USERMENUS ADD COLUMN ALLOWADD CHAR(1);
+ALTER TABLE USERMENUS ADD COLUMN ALLOWUPDATE CHAR(1);
+ALTER TABLE USERMENUS ADD COLUMN ALLOWDELETE CHAR(1);
+-- Informix
+ALTER TABLE "USERMENUS" ADD ("ALLOWADD" CHAR(1));
+ALTER TABLE "USERMENUS" ADD ("ALLOWUPDATE" CHAR(1));
+ALTER TABLE "USERMENUS" ADD ("ALLOWDELETE" CHAR(1));
+```
+
+型別對照：`USERID`、`MENUID`、`ALLOW*` 五個 DB 一致（Oracle 用 `varchar2`，其餘 `varchar/nvarchar`）。
 
 ---
 

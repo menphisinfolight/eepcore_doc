@@ -129,10 +129,27 @@ TABLE_NAMES 陣列定義：`{ "Master", "Detail", "Detail2", "Detail3", "SubDeta
 
 ### 跨資料庫差異
 
-| 欄位 | SQL Server | Oracle | MySQL |
-|------|-----------|--------|-------|
-| TRSFORMAT | `nvarchar(max)` | `clob` | `text` |
-| TRSDATE | `datetime` | `date` | `datetime` |
+#### 欄位存在度
+
+五個 DB `CREATE TABLE` 都含完整 9 欄位（含 `DETAIL2TABLE` / `DETAIL3TABLE`）。
+
+#### 型別對照
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|-------|--------|-------|-----|----------|
+| `TRSFORMAT` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(8000)` ⚠️ | `LVARCHAR(8000)` ⚠️ |
+| `TRSDATE` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
+
+> ⚠️ DB2 / Informix `TRSFORMAT` 上限 8000 字元。
+
+#### SP7 升級 ALTER ADD 矩陣
+
+| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|---------|:-:|:-:|:-:|:-:|:-:|
+| `DETAIL2TABLE` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `DETAIL3TABLE` | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+Oracle / MySQL / DB2 / Informix CREATE TABLE 都已含這兩個欄位，但舊版升級時要手動補。
 
 ---
 

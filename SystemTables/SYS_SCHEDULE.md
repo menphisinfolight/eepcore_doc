@@ -69,14 +69,32 @@ SYS_SCHEDULE ──(ID)──> SYS_SCHEDULE_LOG  （執行日誌，一對多）
 
 ### 跨資料庫差異
 
-| 欄位 | SQL Server | MySQL | Oracle | DB2 |
-|------|-----------|-------|--------|-----|
-| ID | `int IDENTITY(1,1)` | `int AUTO_INCREMENT` | `int`（手動序列） | `INT GENERATED ALWAYS AS IDENTITY` |
-| Setting | `nvarchar(max)` | `text` | `clob` | `NVARCHAR(7000)` |
-| Parameter | `nvarchar(max)` | `text` | `clob` | `NVARCHAR(7000)` |
-| InvokeTime | `nvarchar(max)` | `text` | `clob` | `NVARCHAR(7000)` |
-| LastTime | `bigint` | `bigint` | `number(20)` | `BIGINT` |
-| Disabled | `bit` | `bit` | `CHAR(1)` | `DECIMAL(1,0)` |
+#### 欄位存在度
+
+五個 DB `CREATE TABLE` 都含完整 12 欄位（含 SP7 新增的 `Disabled`）。
+
+#### 型別對照
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|-------|--------|-------|-----|----------|
+| `ID` | `int IDENTITY(1,1)` | `integer` + 序列 | `int AUTO_INCREMENT` | `INT GENERATED ALWAYS AS IDENTITY` | `SERIAL` |
+| `Setting` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(7000)` | `LVARCHAR(7000)` |
+| `Parameter` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(7000)` | `LVARCHAR(7000)` |
+| `InvokeTime` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(2000)` ⚠️ | `LVARCHAR(2000)` ⚠️ |
+| `LastTime` | `bigint` | `number` | `bigint` | `BIGINT` | `BIGINT` |
+| `Disabled` | `bit` | `CHAR(1)` | `bit` | `DECIMAL(1,0)` | `DECIMAL(1,0)` |
+
+> ⚠️ DB2 / Informix `InvokeTime` 只有 2000 字元（其他 DB 可無限）。若一個排程的執行時刻字串很長（如每日多個時段 × weekly/monthly 的複雜組合）會被截斷。
+
+#### SP7 升級 ALTER ADD 矩陣
+
+| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|---------|:-:|:-:|:-:|:-:|:-:|
+| `Disabled` | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+只有 MSSQL 有 ALTER；其他 4 DB CREATE TABLE 已含 `Disabled`，舊版升級時需手動補（含正確的型別對應）。
+
+> ℹ️ 詳細機制與 Oracle 欄位名大小寫陷阱，請見「其他主題 → 排程機制」說明文件（**Schedule排程機制**）。
 
 ---
 

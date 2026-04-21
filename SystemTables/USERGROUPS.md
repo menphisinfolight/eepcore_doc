@@ -50,7 +50,43 @@ USERS ──(USERGROUPS)──> GROUPS
 
 ### 跨資料庫差異
 
-各資料庫定義一致，僅 Oracle 使用 `varchar2` 取代 `varchar`。GROUPID 欄位早期為 `varchar(20)`，後透過 `ALTER TABLE` 擴展為 `varchar(50)`。
+#### 欄位存在度
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|:-:|:-:|:-:|:-:|:-:|
+| `USERID` / `GROUPID` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`LINE`** | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+CREATE TABLE 五個 DB 都有完整欄位，**無差異**。
+
+#### 型別對照（PK 欄位長度嚴重不一致）
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|-------|--------|-------|-----|----------|
+| `USERID` | `varchar(20)` | `varchar2(20)` | `varchar(20)` | `NVARCHAR(20)` | ⚠️ `NVARCHAR(50)` |
+| `GROUPID` | `varchar(50)` | `varchar2(50)` | `varchar(50)` | ⚠️ `NVARCHAR(20)` | `NVARCHAR(20)` |
+| `LINE` | `nvarchar(50)` | `varchar2(50)` | `nvarchar(50)` | `NVARCHAR(50)` | `NVARCHAR(50)` |
+
+> ⚠️ **PK 長度 DB 間不一致**：DB2 的 `GROUPID` 只有 20（其他 50），Informix 的 `USERID` 為 50（其他 20）。若群組碼常超過 20，DB2 會出包；使用者帳號較長時，MSSQL/Oracle/MySQL/DB2 的 20 字元也可能不夠。
+
+#### SP7 升級 ALTER ADD 矩陣
+
+| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|---------|:-:|:-:|:-:|:-:|:-:|
+| `LINE` | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+只有 MSSQL 有升級補 `LINE` 欄位邏輯；其他 4 個 DB 的 CREATE TABLE 都已含 `LINE`，但舊版升級的 MySQL / DB2 / Informix / Oracle 需要手動補：
+
+```sql
+-- Oracle
+ALTER TABLE USERGROUPS ADD LINE varchar2(50) NULL;
+-- MySQL
+ALTER TABLE USERGROUPS ADD LINE nvarchar(50) NULL;
+-- DB2
+ALTER TABLE USERGROUPS ADD COLUMN LINE NVARCHAR(50);
+-- Informix
+ALTER TABLE "USERGROUPS" ADD ("LINE" NVARCHAR(50));
+```
 
 ---
 

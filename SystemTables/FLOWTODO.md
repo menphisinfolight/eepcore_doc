@@ -73,6 +73,35 @@ FLOWTODO ──(InstanceID)──> FLOWINSTANCE  （流程實例）
 | **PActivityID** | `nvarchar(50)` | NULL | 父活動編號（加簽時指向原活動的 ActivityID） |
 | **ProjectID** | `nvarchar(50)` | NULL | 所屬解決方案編號 |
 
+### 跨資料庫差異
+
+#### 欄位存在度
+
+五個 DB `CREATE TABLE` 都含完整 25 欄（含 `CanEdit`/`CanPrint`/`CanReject`/`ExpDatetime`/`ProjectID` 等 SP7 新欄位）。
+
+#### 型別對照
+
+| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|------|-------|--------|-------|-----|----------|
+| `Datetime` / `ExpDatetime` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
+| `Can*`（6 個 bool 欄位） | `bit` | `NUMBER(1)` | `bit` | `DECIMAL(1,0)` | `DECIMAL(1,0)` |
+| `Parameter` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(8000)` ⚠️ | `LVARCHAR(8000)` ⚠️ |
+| `Remark` | `nvarchar(2048)` | `varchar2(2048)` | `nvarchar(2048)` | `NVARCHAR(2048)` | `LVARCHAR(2048)` |
+
+> ⚠️ **Parameter 欄位長度 DB2 / Informix 只有 8000 字元**（MSSQL/MySQL 為無上限，Oracle 是 CLOB 也無實質上限）。大型流程的 Parameter JSON 有機會超出，需注意。
+
+#### SP7 升級 ALTER ADD 矩陣
+
+| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
+|---------|:-:|:-:|:-:|:-:|:-:|
+| `CanEdit` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `CanReject` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `CanPrint` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `ExpDatetime` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `ProjectID` | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+5 個新欄位，Oracle / MySQL / DB2 / Informix CREATE TABLE 都已含但升級腳本**完全沒有 ALTER**。舊版升級到 SP7 時，四個非 MSSQL 的 DB 都要手動補欄位。
+
 ### Status 狀態列舉
 
 | 值 | 狀態 | 說明 |
