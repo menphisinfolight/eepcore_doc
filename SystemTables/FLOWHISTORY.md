@@ -64,50 +64,10 @@ FLOWHISTORY ──(InstanceID)──> FLOWINSTANCE  （流程實例）
 
 ### 跨資料庫差異
 
-#### 欄位存在度（CREATE TABLE 新裝）
+⚠️ **Informix 新裝就缺 `Duration` / `ExpDatetime`**（SLA / 預期完成時間失效）。
+⚠️ **Oracle CREATE TABLE 的 `Duration` 誤設為 `NUMBER(1)`**（只能存 0-9），升級 ALTER 才改為 `NUMBER(10,2)`。
 
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|:-:|:-:|:-:|:-:|:-:|
-| 前 14 個核心欄位 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `ProjectID` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **`Duration`** | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **`ExpDatetime`** | ✅ | ✅ | ✅ | ✅ | ❌ |
-
-> ⚠️ **Informix CREATE TABLE 缺 `Duration` 與 `ExpDatetime` 兩個欄位**（新裝就缺）。若在 Informix 環境使用 SLA 統計 / 預期完成時間，必須手動 ALTER ADD。
-
-#### 型別對照
-
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|-------|--------|-------|-----|----------|
-| `Datetime` / `StartDatetime` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
-| `Parameter` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(8000)` ⚠️ | `LVARCHAR(8000)` ⚠️ |
-| `Duration` | `decimal(8,2)` | `NUMBER(1)` ⚠️ | `decimal(8,2)` | `DECIMAL(8,2)` | — |
-
-> ⚠️ **Oracle 的 `Duration` 是 `NUMBER(1)` 而非 `NUMBER(8,2)`** — 看起來是腳本錯誤，只能存 0-9 的整數，實際上 Duration 是天數（常有小數點、需要大於 9 的值）。Oracle 環境下需手動 `ALTER TABLE FLOWHISTORY MODIFY ("Duration" NUMBER(10,2))`。
-
-#### SP7 升級 ALTER ADD 矩陣
-
-| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|---------|:-:|:-:|:-:|:-:|:-:|
-| `ProjectID` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `Duration` | ✅ | ✅（`NUMBER(10,2)`）| ❌ | ❌ | ❌ |
-| `ExpDatetime` | ✅ | ✅（`DATE`）| ❌ | ❌ | ❌ |
-
-> Oracle 對 `Duration` / `ExpDatetime` 有 `EXECUTE IMMEDIATE 'ALTER TABLE "FLOWHISTORY" ADD ...'` 補欄位邏輯（且 Duration 用的是正確的 `NUMBER(10,2)`，覆蓋掉 CREATE 裡的 `NUMBER(1)`）。
-
-#### 手動補欄位 SQL
-
-```sql
--- Informix（補缺的 Duration 和 ExpDatetime）
-ALTER TABLE "FlowHistory" ADD ("Duration" DECIMAL(8,2));
-ALTER TABLE "FlowHistory" ADD ("ExpDatetime" DATETIME YEAR TO SECOND);
-
--- Oracle（修正 CREATE 時誤設的 NUMBER(1)）
-ALTER TABLE "FLOWHISTORY" MODIFY ("Duration" NUMBER(10,2));
-
--- MySQL / DB2（舊表升級時補 ProjectID / Duration / ExpDatetime）
--- 型別對照表中已列出
-```
+👉 完整欄位存在度、升級 ALTER 支援矩陣、手動補欄位 / 修型別 SQL：**問題_SP7_跨資料庫欄位差異盤點**
 
 ### Status 狀態列舉
 

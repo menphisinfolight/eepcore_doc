@@ -62,79 +62,11 @@ COLDEF 是 EEP Core 的核心系統表之一，用來儲存各「資料表 + 欄
 
 ### 跨資料庫差異
 
-#### 主要型別對照（CREATE TABLE 新裝）
+Oracle 用 `varchar2`、其他 DB 用 `nvarchar` / `NVARCHAR`，數值欄位（`SEQ` / `FIELD_LENGTH` / `FIELD_SCALE`）全 DB 皆為 `DECIMAL(12,0)`。
 
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|-------|--------|-------|-----|----------|
-| `TABLE_NAME` | `nvarchar(200)` | `varchar2(200)` | `nvarchar(200)` | ⚠️ `NVARCHAR(20)` | `NVARCHAR(50)` |
-| `FIELD_NAME` | `nvarchar(200)` | `varchar2(200)` | `nvarchar(200)` | ⚠️ `NVARCHAR(20)` | `NVARCHAR(50)` |
-| `DEFAULT_VALUE` | `nvarchar(1024)` | `varchar2(1024)` | `nvarchar(1024)` | `NVARCHAR(1024)` | `LVARCHAR(1024)` |
-| 其他 char 類欄位 | `nvarchar(n)` | `varchar2(n)` | `nvarchar(n)` | `NVARCHAR(n)` | `NVARCHAR(n)` |
-| 數值欄位（SEQ / FIELD_LENGTH / FIELD_SCALE） | `decimal(12,0)` | `decimal(12,0)` | `decimal(12,0)` | `DECIMAL(12,0)` | `DECIMAL(12,0)` |
+⚠️ **`TABLE_NAME` / `FIELD_NAME` 長度跨 DB 差異大**：MSSQL / Oracle / MySQL 為 200，Informix 50，**DB2 僅 20**。實際表名超過 DB 欄位長度會寫入失敗或截斷。
 
-> ⚠️ **DB2 / Informix 的 PK 欄位長度大幅短於其他 DB**：
-> - DB2：`TABLE_NAME` / `FIELD_NAME` 僅 **20 字元**
-> - Informix：50 字元
-> - MSSQL / Oracle / MySQL：200 字元
->
-> 若實際使用中有表名或欄位名超過此長度，DB2 / Informix 會寫入失敗或截斷。建議 DBA 手動 `ALTER` 拉長（MSSQL 建表腳本有 `ALTER COLUMN ... nvarchar(200)` 的升級補丁，但 Oracle / MySQL / DB2 / Informix **沒有對應的 ALTER 補丁**）。
-
-#### SP7 升級補欄位支援矩陣（舊版升級時是否自動 ALTER ADD）
-
-新裝環境下五個 DB 的 CREATE TABLE 都有完整 36 個欄位，**無差異**。真正差異在**從舊版升級 SP7 時**，建表腳本是否含 `ALTER TABLE ADD` 自動補欄位：
-
-| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|---------|:-:|:-:|:-:|:-:|:-:|
-| `CANEDIT` | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `FIELD_MERGE` | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `FIELD_VISIBLE` | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `FIELD_TOTAL` | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `FIELD_READONLY` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `SHOWAPP` | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `DESCRIPTION` | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `GROUPTITLE` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **PK 長度升級**（TABLE_NAME / FIELD_NAME 拉到 200） | ✅ | ❌ | ❌ | ❌ | ❌ |
-
-> 來源：`EEPWebClient.Core/wwwroot/sql/{sql,oracle,mysql,db2,informix}/systemTables.sql` 的 ALTER TABLE 段落。
-
-**結論**：
-- **MSSQL**：升級自動化最完整
-- **Oracle**：補了 6 個欄位，**仍缺 `FIELD_READONLY` / `GROUPTITLE` 與 PK 長度升級**
-- **MySQL / DB2 / Informix**：建表腳本**完全沒有 ALTER 補欄位邏輯**。客戶若從舊版升 SP7，必須手動 `ALTER TABLE COLDEF ADD ...` 補所有 8 個欄位
-
-#### 手動補欄位 SQL 範本
-
-給 DBA 在 MySQL / DB2 / Informix 升級時參考（逐條檢查是否已存在；Oracle 還要補 `FIELD_READONLY` 和 `GROUPTITLE`）：
-
-```sql
--- MySQL
-ALTER TABLE COLDEF ADD CANEDIT nvarchar(1) NULL;
-ALTER TABLE COLDEF ADD FIELD_MERGE nvarchar(1) NULL;
-ALTER TABLE COLDEF ADD FIELD_VISIBLE nvarchar(1) NULL;
-ALTER TABLE COLDEF ADD FIELD_TOTAL nvarchar(1) NULL;
-ALTER TABLE COLDEF ADD FIELD_READONLY nvarchar(1) NULL;
-ALTER TABLE COLDEF ADD SHOWAPP nvarchar(1) NULL;
-ALTER TABLE COLDEF ADD DESCRIPTION nvarchar(200) NULL;
-ALTER TABLE COLDEF ADD GROUPTITLE nvarchar(30) NULL;
-
--- Oracle（CREATE TABLE 已含 FIELD_READONLY / GROUPTITLE，舊表升級缺這兩個要補）
-ALTER TABLE COLDEF ADD FIELD_READONLY varchar2(1) NULL;
-ALTER TABLE COLDEF ADD GROUPTITLE varchar2(30) NULL;
-
--- DB2
-ALTER TABLE COLDEF ADD COLUMN CANEDIT NVARCHAR(1);
-ALTER TABLE COLDEF ADD COLUMN FIELD_MERGE NVARCHAR(1);
--- ... 其餘同列，型別 NVARCHAR(1)，DESCRIPTION NVARCHAR(200)，GROUPTITLE NVARCHAR(30)
-
--- Informix
-ALTER TABLE COLDEF ADD CANEDIT NVARCHAR(1);
-ALTER TABLE COLDEF ADD FIELD_MERGE NVARCHAR(1);
--- ... 其餘同列
-
--- DB2 / Informix 若表名超過 20 / 50 字元還要先拉長 PK 欄位（型別與 CREATE 同）
--- DB2：ALTER TABLE COLDEF ALTER COLUMN TABLE_NAME SET DATA TYPE NVARCHAR(200);
--- Informix：ALTER TABLE "COLDEF" MODIFY ("TABLE_NAME" NVARCHAR(200) NOT NULL);
-```
+👉 新裝缺欄位、SP7 升級 ALTER 支援矩陣、手動補欄位 SQL：**問題_SP7_跨資料庫欄位差異盤點**
 
 ---
 

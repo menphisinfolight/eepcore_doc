@@ -47,27 +47,9 @@ SYS_MESSENGER ──(USERID)───> USERS  （接收者，LEFT JOIN 取 USERN
 
 ### 跨資料庫差異
 
-#### 欄位存在度
+五個 DB CREATE TABLE 都完整。⚠️ **`PARAS` 長度跨 DB 差很大**：MSSQL/MySQL 無上限、DB2 4096、Oracle 4000、**Informix 僅 1024**。
 
-五個 DB 都含完整 8 欄位（含 `ID` PK）。
-
-#### 型別對照
-
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|-------|--------|-------|-----|----------|
-| `ID` | `int IDENTITY(1,1)` | `integer` + 序列 | `int AUTO_INCREMENT` | `INT GENERATED ALWAYS AS IDENTITY` | `SERIAL` |
-| `MESSAGE` | `nvarchar(1024)` | `varchar2(1024)` | `nvarchar(1024)` | `NVARCHAR(1024)` | `LVARCHAR(1024)` |
-| `PARAS` | `nvarchar(max)` | `varchar2(4000)` | `text` | `NVARCHAR(4096)` | `LVARCHAR(1024)` ⚠️ |
-
-> ⚠️ **`PARAS` 欄位長度跨 DB 差很大**：MSSQL / MySQL 無上限，DB2 4096、Oracle 4000、**Informix 只有 1024**。Informix 環境下較長通知參數會截斷。
-
-#### SP7 升級 ALTER ADD 矩陣
-
-| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|---------|:-:|:-:|:-:|:-:|:-:|
-| `ID` | ✅ | ❌ | ❌ | ❌ | ❌ |
-
-`ID` 是後期加入的 PK；只有 MSSQL 有 `ALTER TABLE ADD ID int IDENTITY(1,1) NOT NULL` 升級邏輯。其他 DB 的 CREATE TABLE 都已含此欄位，但舊版升級要自己補（序列 / IDENTITY 設定較複雜）。
+👉 升級 ALTER 支援矩陣、手動補欄位 SQL：**問題_SP7_跨資料庫欄位差異盤點**
 
 ---
 

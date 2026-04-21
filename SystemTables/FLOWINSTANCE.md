@@ -47,38 +47,9 @@ FLOWINSTANCE ──(InstanceID)──> FLOWTODO      （待辦事項）
 
 ### 跨資料庫差異
 
-#### 欄位存在度
+五個 DB CREATE TABLE 都完整。型別差異：`State` 用 BLOB/image、`Datetime` 各 DB 日期型別不同、`Parameter` 各 DB 為 nvarchar/clob/LVARCHAR。
 
-五個 DB `CREATE TABLE` 都含完整 5 欄（`InstanceID` / `State` / `Datetime` / `Parameter` / `ProjectID`），**無缺欄位**。
-
-#### 型別對照
-
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|-------|--------|-------|-----|----------|
-| `State` | `image` | `BLOB` | `BLOB` | `BLOB(100M)` | `BLOB` |
-| `Datetime` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
-| `Parameter` | `nvarchar(2048)` | `clob` | `nvarchar(2048)` | `NVARCHAR(2048)` | `LVARCHAR(2048)` |
-
-> ℹ️ Informix 另有一個同名小寫的 `state BLOB` 作為輔助欄位（DDL 逐行列出兩條）。
-
-#### SP7 升級 ALTER ADD 矩陣
-
-| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|---------|:-:|:-:|:-:|:-:|:-:|
-| `ProjectID` | ✅ | ❌ | ❌ | ❌ | ❌ |
-
-只有 MSSQL 有升級補 `ProjectID` 邏輯；其他 DB 的 CREATE TABLE 都已含此欄位，但舊版升級時要手動補：
-
-```sql
--- Oracle
-ALTER TABLE FlowInstance ADD "ProjectID" varchar2(50) NULL;
--- MySQL
-ALTER TABLE FlowInstance ADD ProjectID nvarchar(50) NULL;
--- DB2
-ALTER TABLE FlowInstance ADD COLUMN ProjectID NVARCHAR(50);
--- Informix
-ALTER TABLE "FlowInstance" ADD ("ProjectID" NVARCHAR(50));
-```
+👉 升級 ALTER 支援矩陣、手動補欄位 SQL：**問題_SP7_跨資料庫欄位差異盤點**
 
 ---
 

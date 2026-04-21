@@ -69,79 +69,11 @@ USERS ──(USERGROUPS)──> GROUPS     （群組/角色歸屬）
 
 ### 跨資料庫差異
 
-#### 欄位存在度（CREATE TABLE 新裝）
+日期欄位：MSSQL `datetime` / Oracle `date` / DB2 `TIMESTAMP` / Informix `DATETIME YEAR TO SECOND`。
 
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|:-:|:-:|:-:|:-:|:-:|
-| USERID / USERNAME / PWD / AGENT / AGENTREADONLY | ✅ | ✅ | ✅ | ✅ | ✅ |
-| CREATEDATE / CREATER / DESCRIPTION / EMAIL | ✅ | ✅ | ✅ | ✅ | ✅ |
-| LASTTIME / LASTDATE / AUTOLOGIN / SIGNATURE | ✅ | ✅ | ✅ | ✅ | ✅ |
-| EXPIRYDATE / LINE / CALENDAR | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **MSAD** | ✅ (50) | ✅ (50) | ✅ (50) | ⚠️ **(1)** | ⚠️ **(1)** |
-| **MOBILE** | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **PWDDATE** | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **LOCALE** | ✅ | ✅ | ✅ | ❌ | ❌ |
+⚠️ **DB2 / Informix 的 `MSAD` 只 `NVARCHAR(1)`**（其他 DB 是 50，像 DDL 腳本 typo），且 DB2 缺 `PWDDATE` / `LOCALE`、Informix 再缺 `MOBILE`。
 
-> ⚠️ **DB2 / Informix 的 `MSAD` 欄位建表腳本長度只有 `NVARCHAR(1)`**（其他 DB 是 50）。MSAD 是 Active Directory 帳號對應欄位，1 字元塞不下任何真實的 AD 帳號 — 看起來像腳本打字錯誤（`NVARCHAR(50)` 漏打成 `NVARCHAR(1)`）。**DB2 / Informix 環境若要用 LDAP/AD 整合，必須手動 `ALTER` 拉長此欄位**。
-
-#### 主要型別對照
-
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|-------|--------|-------|-----|----------|
-| `USERID` | `varchar(20)` | `varchar2(20)` | `varchar(20)` | `NVARCHAR(20)` | `NVARCHAR(20)` |
-| `EXPIRYDATE` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
-| `PWDDATE` | `datetime` | `date` | `datetime` | — | — |
-| 其他 char 欄位 | `nvarchar(n)` | `varchar2(n)` | `nvarchar(n)` | `NVARCHAR(n)` | `NVARCHAR(n)` |
-
-#### SP7 升級補欄位支援矩陣（舊版升級時是否自動 ALTER ADD）
-
-| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|---------|:-:|:-:|:-:|:-:|:-:|
-| `AGENTREADONLY` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `EXPIRYDATE` | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `LINE` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `CALENDAR` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `PWDDATE` | ✅ | ❌ | ❌ | — | — |
-| `LOCALE` | ✅ | ❌ | ❌ | — | — |
-| `MOBILE` | ✅ | ❌ | ❌ | ❌ | — |
-
-> **結論**：
-> - **MSSQL**：7 個 SP7 新欄位全自動補
-> - **Oracle**：只自動補 `EXPIRYDATE`，其餘 6 個欄位 CREATE TABLE 雖已含，但**舊表升級時不會自動補**
-> - **MySQL / DB2 / Informix**：建表腳本**完全沒有 `ALTER TABLE ADD`**，而且 DB2 / Informix 連 CREATE TABLE 本身就缺 `PWDDATE` / `LOCALE`（+ Informix 缺 `MOBILE`）
-> - MSSQL 的 `PWDDATE` ALTER 是 `nvarchar(200)`，但 CREATE TABLE 是 `datetime` — 程式實際讀寫仍用日期格式，這是很古早的腳本殘留，正常不會觸發（CREATE TABLE 已經有 datetime 欄位）
-
-#### 手動補欄位 / 修欄位 SQL 範本
-
-```sql
--- DB2：補 PWDDATE、LOCALE 並修正 MSAD 長度
-ALTER TABLE USERS ADD COLUMN PWDDATE TIMESTAMP;
-ALTER TABLE USERS ADD COLUMN LOCALE NVARCHAR(50);
-ALTER TABLE USERS ALTER COLUMN MSAD SET DATA TYPE NVARCHAR(50);
-
--- Informix：補 PWDDATE、LOCALE、MOBILE 並修正 MSAD 長度
-ALTER TABLE "USERS" ADD ("PWDDATE" DATETIME YEAR TO SECOND);
-ALTER TABLE "USERS" ADD ("LOCALE" NVARCHAR(50));
-ALTER TABLE "USERS" ADD ("MOBILE" NVARCHAR(40));
-ALTER TABLE "USERS" MODIFY ("MSAD" NVARCHAR(50));
-
--- MySQL：舊版升級時所有 SP7 新欄位都要自己補
-ALTER TABLE USERS ADD AGENTREADONLY nvarchar(1) NULL;
-ALTER TABLE USERS ADD EXPIRYDATE datetime NULL;
-ALTER TABLE USERS ADD LINE nvarchar(50) NULL;
-ALTER TABLE USERS ADD CALENDAR nvarchar(200) NULL;
-ALTER TABLE USERS ADD PWDDATE datetime NULL;
-ALTER TABLE USERS ADD LOCALE nvarchar(50) NULL;
-ALTER TABLE USERS ADD MOBILE nvarchar(40) NULL;
-
--- Oracle：除 EXPIRYDATE 外其餘 6 個升級都要手動補
-ALTER TABLE USERS ADD AGENTREADONLY varchar2(1) NULL;
-ALTER TABLE USERS ADD LINE varchar2(50) NULL;
-ALTER TABLE USERS ADD CALENDAR varchar2(200) NULL;
-ALTER TABLE USERS ADD PWDDATE date NULL;
-ALTER TABLE USERS ADD LOCALE varchar2(50) NULL;
-ALTER TABLE USERS ADD MOBILE varchar2(40) NULL;
-```
+👉 完整欄位存在度、SP7 升級 ALTER 支援矩陣、手動補欄位 SQL：**問題_SP7_跨資料庫欄位差異盤點**
 
 ---
 

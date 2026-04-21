@@ -58,45 +58,10 @@ SYS_DOCFILES ──(MASTERTABLE/DETAILTABLE)──> COLDEF（欄位定義）
 
 ### 跨資料庫差異
 
-#### 欄位存在度（CREATE TABLE 新裝）
+⚠️ **DB2 新裝缺 `SUBDETAILTABLE`**（第三層明細失效）。
+⚠️ DB2 / Informix `REPORTFORMAT` 上限 8000 字元，大型報表定義可能超出。
 
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|:-:|:-:|:-:|:-:|:-:|
-| 其他欄位（FILENAME / NAME / MASTERTABLE / DETAILTABLE / ...） | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `DETAIL2TABLE` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `DETAIL3TABLE` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **`SUBDETAILTABLE`** | ✅ | ✅ | ✅ | ❌ | ✅ |
-
-> ⚠️ **DB2 CREATE TABLE 缺 `SUBDETAILTABLE` 欄位**（新裝就缺；其他 4 DB 都有）。DB2 環境需要手動補。
-
-#### 型別對照
-
-| 欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|------|-------|--------|-------|-----|----------|
-| `REPORTFORMAT` | `nvarchar(max)` | `clob` | `text` | `NVARCHAR(8000)` ⚠️ | `LVARCHAR(8000)` ⚠️ |
-| `DOCDATE` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
-
-> ⚠️ DB2 / Informix `REPORTFORMAT` 上限 8000 字元，大型報表定義可能超出。
-
-#### SP7 升級 ALTER ADD 矩陣
-
-| 新增欄位 | MSSQL | Oracle | MySQL | DB2 | Informix |
-|---------|:-:|:-:|:-:|:-:|:-:|
-| `DETAIL2TABLE` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `DETAIL3TABLE` | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `SUBDETAILTABLE` | ✅ | ❌ | ❌ | ❌ | ❌ |
-
-MSSQL 自動補；Oracle / MySQL / Informix CREATE TABLE 已含但升級腳本沒 ALTER；**DB2 本就缺 `SUBDETAILTABLE`**。
-
-```sql
--- DB2（補缺的 SUBDETAILTABLE）
-ALTER TABLE SYS_DOCFILES ADD COLUMN SUBDETAILTABLE NVARCHAR(50);
-
--- 其他 DB（舊表升級時補 3 個 DETAIL* 欄位）
-ALTER TABLE SYS_DOCFILES ADD DETAIL2TABLE nvarchar(50) NULL;
-ALTER TABLE SYS_DOCFILES ADD DETAIL3TABLE nvarchar(50) NULL;
-ALTER TABLE SYS_DOCFILES ADD SUBDETAILTABLE nvarchar(50) NULL;
-```
+👉 升級 ALTER 支援矩陣、手動補欄位 SQL：**問題_SP7_跨資料庫欄位差異盤點**
 
 ---
 

@@ -40,15 +40,11 @@ MENUCHECKLOG 儲存設計端元件（Server 模組 / Menu / Bootstrap / Client /
 
 ### 跨資料庫差異
 
-| 欄位 | SQL Server | Oracle | MySQL | DB2 | Informix |
-|------|-----------|--------|-------|-----|----------|
-| `LOGID` | `int IDENTITY(1,1)` | `integer NOT NULL` + 序列 | `int AUTO_INCREMENT` | `INT GENERATED ALWAYS AS IDENTITY` | `SERIAL NOT NULL` |
-| `PACKAGEDATE` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
-| `FILEDATE` | `datetime` | `date` | `datetime` | `TIMESTAMP` | `DATETIME YEAR TO SECOND` |
-| `FILECONTENT` | `image` | **`CLOB`** | `LONGBLOB` | `BLOB(10M)` | `BLOB`（+ 同名小寫欄位）|
-| `USERID` | `nvarchar(50)`（後期 ALTER 補）| （無）| （無）| （無）| （無）|
+`FILECONTENT` 跨 DB 型別差異大：MSSQL `image`、Oracle `CLOB`、MySQL `LONGBLOB`、DB2 `BLOB(10M)`、Informix `BLOB`（+ 同名小寫欄位）。Oracle CLOB 字串字面值上限 4000，Submit 因此切 3900 字元段以 ` to_clob` 連接（見 `VersionControlProvider.Submit`）。讀回時對 byte[] 型態（image / LONGBLOB）用 `Encoding.UTF8.GetString` 轉字串。
 
-> Oracle CLOB 每字面字串最多 4000 字元，Submit 因此把 FILECONTENT 切成 **3900 字元段**，以 ` to_clob` 連接子串（見 `VersionControlProvider.Submit` L226-233）。GetVersion 讀回時會 `content.Replace(" to_clob", "")` 還原、並針對 byte[] 型態（SQL Server image / MySQL LONGBLOB）用 `Encoding.UTF8.GetString` 轉回字串。
+⚠️ **`USERID` 欄位只有 MSSQL 有**（後期 ALTER 補上），Oracle / MySQL / DB2 / Informix 都沒有此欄位 → 這 4 個 DB 看不到操作者帳號。
+
+👉 升級 ALTER 支援矩陣、手動補欄位 SQL：**問題_SP7_跨資料庫欄位差異盤點**
 
 ---
 
