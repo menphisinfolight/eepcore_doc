@@ -164,8 +164,9 @@ const GROUPS = [
     ['SYS_TODOLIST', '待辦清單'], ['SYS_FLDEFINITION', '流程定義'], ['SYS_FLINSTANCESTATE', '流程實例狀態'],
     ['SYS_EXTAPPROVE', '外部簽核'], ['SYS_SSO_SOLUTION', 'SSO 方案'], ['SYS_INFOPAY', '金流閘道'],
   ]},
-  { title: '問題記錄', items: [
-    ['問題_Oracle_建立索引_ORA-00903', 'Oracle 建索引 bug（ORA-00903）'],
+  { title: '問題紀錄', items: [
+    ['問題_SP7_跨資料庫欄位差異盤點', '18 張表 SP7 升級欄位差異與手動補欄位 SQL', '問題紀錄/問題_SP7_跨資料庫欄位差異盤點'],
+    ['問題_Oracle_建立索引_ORA-00903', 'Oracle 建索引 bug（ORA-00903）', '問題紀錄/問題_Oracle_建立索引_ORA-00903'],
   ]},
 ];
 marked.setOptions({ highlight: function(code, lang) { if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value; return hljs.highlightAuto(code).value; } });
@@ -173,14 +174,15 @@ function buildSidebar() {
   const nav = document.getElementById('sidebar-nav'); let html = '';
   GROUPS.forEach((g, i) => { const open = i < 6 ? 'open' : '';
     html += `<div class="nav-group ${open}"><div class="nav-group-title" onclick="this.parentElement.classList.toggle('open')">${g.title}</div><div class="nav-group-items">`;
-    g.items.forEach(([name, desc]) => { html += `<a class="nav-item" data-name="${name}" href="#${name}" onclick="loadPage('${name}')"><span class="table-name">${name}</span> <span class="table-desc">${desc}</span></a>`; });
+    g.items.forEach(([name, desc, path]) => { const file = path || name; html += `<a class="nav-item" data-name="${name}" data-file="${file}" href="#${name}" onclick="loadPage('${name}', null, '${file}')"><span class="table-name">${name}</span> <span class="table-desc">${desc}</span></a>`; });
     html += '</div></div>'; }); nav.innerHTML = html;
 }
-async function loadPage(name, section) {
+async function loadPage(name, section, file) {
   const content = document.getElementById('md-content');
   content.innerHTML = '<div class="loading">載入中...</div>';
   try {
-    const res = await fetch(`${MD_DIR}${name}.md`); if (!res.ok) throw new Error(`${res.status}`);
+    if (!file) { const navEl = document.querySelector(`.nav-item[data-name="${name}"]`); file = navEl ? navEl.dataset.file : name; }
+    const res = await fetch(`${MD_DIR}${file}.md`); if (!res.ok) throw new Error(`${res.status}`);
     const md = await res.text(); content.innerHTML = marked.parse(md);
     content.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
     content.querySelectorAll('a[href]').forEach(a => { const href = a.getAttribute('href'); const match = href.match(/^\.?\/?([A-Z][A-Z0-9_]+)\.md$/); if (match) { a.href = `#${match[1]}`; a.onclick = (e) => { e.preventDefault(); loadPage(match[1]); }; } });
@@ -195,7 +197,7 @@ async function loadPage(name, section) {
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     }
-  } catch (e) { content.innerHTML = `<p>無法載入 ${MD_DIR}${name}.md：${e.message}</p>`; }
+  } catch (e) { content.innerHTML = `<p>無法載入 ${MD_DIR}${file || name}.md：${e.message}</p>`; }
 }
 function buildTOC() {
   const headings = document.querySelectorAll('#md-content h2, #md-content h3'); const links = document.getElementById('toc-links'); let html = '';
