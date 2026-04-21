@@ -134,4 +134,4 @@ POST /design/ type=versionControl, mode=rollback, id=..., menuType=..., version=
 - **清理建議**：長期累積的 FILECONTENT 會很佔空間，可定期清理老舊 LOGID（透過版本管理面板 `remove` mode 或直接 SQL 刪）。
 - **停用版本管理**：`global.cfg` 設 `versionControl = "false"`，Submit 直接 no-op，Rollback 會丟例外。
 
-👉 完整機制說明見「其他主題」→「建置 / 開發機制」→ **版本管理機制**
+👉 完整機制說明見 **版本管理機制**
