@@ -1,12 +1,14 @@
 # SYS_FLINSTANCESTATE
 
-## 用途
+> 🛑 **舊版 EEP 遺留表，SP7 已完全不使用**
+>
+> SP7 的流程實例狀態存在 [FlowInstance](tables.html#FLOWINSTANCE) 表（CamelCase），不是這張 `SYS_FLINSTANCESTATE`。此表只剩在建表 SQL 裡殘留，C# 程式碼、前端 JS、所有 infocommand、Provider 都**沒有任何引用**（已全原始碼 grep 確認）。
+>
+> **請勿寫新程式讀/寫這張表**，否則會發現「啟動了流程但查不到狀態」—— 因為引擎根本沒寫進這裡。保留目的推測是早期升級相容 / 預留，實務上可以忽略。
 
-**流程實例狀態表**（Flow Instance State）。
+## 用途（歷史）
 
-SYS_FLINSTANCESTATE 儲存流程實例的狀態快照，包含流程實例 ID、二進位序列化的狀態內容、狀態碼和資訊。
-
-> ⚠️ **舊版遺留，程式碼無引用**：此表在 SQL 建表腳本中有定義，但 EEPCore SP7 的 C# 程式碼和前端 JavaScript 均無引用。無對應的 infocommand、無 Provider。新版流程引擎使用 FLOWINSTANCE 表儲存流程實例狀態，此表為舊版流程引擎的殘留結構。
+**流程實例狀態表**（Flow Instance State）— 舊版 EEP 流程引擎的實例狀態儲存表。SP7 已由 `FlowInstance` 取代。
 
 ### 與 FLOWINSTANCE 的關係
 
