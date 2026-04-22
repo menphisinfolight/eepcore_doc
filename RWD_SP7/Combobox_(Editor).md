@@ -28,13 +28,6 @@
 
 > 原始碼：`bootstrap.infolight.js` 第 9505–9723 行（`$.fn.combobox`）
 
-### 渲染結構
-
-`init` 根據 `multiple` 屬性產生兩種模式：
-
-- **單選模式**：為 `<select>` 加上 `form-select` CSS class，直接作為原生下拉選單。
-- **多選模式**：設定 `multiple` 屬性後，初始化 Bootstrap `selectpicker` 外掛，提供多選 UI。`multipleSeparator`（預設 `,`）用於值的合併與拆分。
-
 ### 公開 API 方法
 
 | 方法 | 說明 |
@@ -284,6 +277,71 @@ function dept_onSelect(value) {
 | **編輯狀態 setValue 沒反應** | editor 未渲染完就 setValue | 在 `onShowEditor` 用 `setTimeout(..., 0)` 延一個 tick | [#473329](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=473329) |
 | **查詢介面 combobox loadData 後每次查詢被覆蓋** | Query 面板 reload 時重載 | 在 `onQuery` 先存全域變數，再還原 | [#481858](https://www.infolight.com/cloud_andyhome2_bootstrap/DISDT?type=010&id=481858) |
 | **fromSysParameters + InfoCommand 可混用嗎** | 設計上**擇一**即可 | `fromSysParameters=true` 會自動蓋 remoteName 為 `SystemTable.sysParas` | 原始碼 L9559 |
+
+## 技術參考（AI / 深度使用）
+
+> 此區段彙整結構化內容 — JSON schema 範例、渲染結構 — 供 AI 檢索或需要深入理解元件行為的開發者參考。日常設定看前面的「設計介面屬性」、「JavaScript 實戰範例」、「常見陷阱與限制」即可。
+
+### JSON 設定範例
+
+```json
+// 模式 1：靜態 items
+{
+  "type": "combobox",
+  "id": "類型",
+  "items": [
+    { "value": "A", "text": "類型 A" },
+    { "value": "B", "text": "類型 B" }
+  ]
+}
+
+// 模式 2：遠端資料（InfoCommand）
+{
+  "type": "combobox",
+  "id": "員工",
+  "remoteName": "員工資料",
+  "valueField": "EMP_ID",
+  "textField": "EMP_NAME",
+  "allowEmpty": true,
+  "whereItems": [
+    { "targetField": "DEPT_ID", "operator": "=", "sourceField": "部門" }
+  ]
+}
+
+// 模式 3：系統參數（SYS_PARAS）
+{
+  "type": "combobox",
+  "id": "狀態",
+  "fromSysParameters": true
+}
+
+// 多選模式
+{
+  "type": "combobox",
+  "id": "主管們",
+  "remoteName": "使用者資料",
+  "valueField": "USERID",
+  "textField": "USERNAME",
+  "multiple": true,
+  "multipleSeparator": ","
+}
+```
+
+三種資料模式優先順序：`fromSysParameters` > `remoteName` > `items`（擇一生效）。`fromSysParameters=true` 會自動把 `remoteName` 蓋成 `SystemTable.sysParas`，以欄位名稱做 `COLUMNNAME = {field}` 篩選。
+
+### 渲染結構
+
+Combobox 不走伺服器端 Render — 設計介面儲存的 JSON 由前端 `$.fn.combobox` 的 `init` 處理：
+
+- **單選模式**：`<select>` 加上 `form-select` CSS class，作為原生下拉選單。
+- **多選模式**：設定 `<select multiple>` 後初始化 Bootstrap `selectpicker` 外掛，提供多選 UI。`multipleSeparator`（預設 `,`）用於值的合併與拆分。
+
+`loadData` 插入選項的順序：
+1. 先插一筆隱藏的「請選擇」提示 `<option>`
+2. 若 `allowEmpty=true`，插一筆空值選項
+3. 遍歷 data 陣列產生 `<option value="{valueField}">{textField}</option>`
+
+多選模式載入完成後會呼叫 `selectpicker('refresh')` 更新 UI（手動 `loadData` 後若選不到最後一個，就是漏了這步）。
 
 ## 備註
 
