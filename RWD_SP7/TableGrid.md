@@ -11,31 +11,6 @@ TableGrid 是 DataGrid 的簡化版本，提供類似的資料瀏覽與編輯功
 
 TableGrid 內部的 `Render()` 方法實際上會建立一個 `DataGrid` 實例，將自身屬性透過反射 `CopyProperty()` 複製過去，再呼叫 `DataGrid.Render()` 以 `"bootstrap-tablegrid"` 範本輸出 HTML。因此 TableGrid 本質上是 DataGrid 的**輕量包裝器**，共用底層渲染邏輯。
 
-## JSON 設定範例
-
-```json
-{
-  "type": "tablegrid",
-  "id": "gridOrder",
-  "remoteName": "orderCommand",
-  "editForm": "formOrder",
-  "columns": [
-    { "field": "ORDER_NO", "title": "訂單編號", "cWidth": 120 },
-    { "field": "ORDER_DATE", "title": "訂單日期", "format": "yyyy/MM/dd", "cWidth": 100 },
-    { "field": "AMOUNT", "title": "金額", "alignment": "right", "format": "N0", "total": "Sum" }
-  ],
-  "toolItems": [
-    { "text": "Add", "iconCls": "glyphicon-plus", "onclick": "insert_row" },
-    { "text": "Delete", "iconCls": "glyphicon-remove", "onclick": "delete_row" }
-  ],
-  "pagination": true,
-  "pageSize": 20,
-  "height": 400,
-  "bordered": true,
-  "hover": true
-}
-```
-
 ## 設計介面屬性
 
 | 屬性 | 類型 | 預設值 | 設計介面 | 說明 |
@@ -287,6 +262,95 @@ TableGrid 在 JS 層繼承自 `datagrid`，共用 DataGrid 的大部分方法（
 | `getChecked` | 取得所有勾選行的資料（跨同一 table-responsive 內的多個 tablegrid） |
 | `getSelectedIndex` | 取得目前選取行的 index |
 | `cancelEdit` / `endEdit` | 空實作（直接呼叫 callback），不支援行內編輯 |
+
+## 技術參考（AI / 深度使用）
+
+> 此區段彙整結構化內容 — JSON schema 範例、伺服器端渲染管線、渲染後 DOM 骨架 — 供 AI 檢索或需要深入理解元件行為的開發者參考。日常設定看前面的「設計介面屬性」、「事件」、「與 DataGrid 的差異」即可。
+
+### JSON 設定範例
+
+```json
+{
+  "type": "tablegrid",
+  "id": "gridOrder",
+  "remoteName": "orderCommand",
+  "editForm": "formOrder",
+  "columns": [
+    { "field": "ORDER_NO", "title": "訂單編號", "cWidth": 120 },
+    { "field": "ORDER_DATE", "title": "訂單日期", "format": "yyyy/MM/dd", "cWidth": 100 },
+    { "field": "AMOUNT", "title": "金額", "alignment": "right", "format": "N0", "total": "Sum" }
+  ],
+  "toolItems": [
+    { "text": "Add", "iconCls": "glyphicon-plus", "onclick": "insert_row" },
+    { "text": "Delete", "iconCls": "glyphicon-remove", "onclick": "delete_row" }
+  ],
+  "pagination": true,
+  "pageSize": 20,
+  "height": 400,
+  "bordered": true,
+  "hover": true
+}
+```
+
+### 渲染流程（伺服器端）
+
+TableGrid 不獨立渲染，而是在 `Render()` 內委派給 DataGrid：
+
+```
+TableGrid.Render()
+  ├─ new DataGrid()                 // 建立 DataGrid 實例
+  ├─ CopyProperty(this, dataGrid)   // 反射：複製所有有 setter 的屬性
+  │   └─ 集合屬性（Columns/ToolItems/WhereItems/QueryColumns）沒 setter
+  │       → 改以 foreach 逐一加入
+  ├─ 組 properties：fixedColumns:{N}   // TableGrid 專屬屬性以 data-options 片段傳入
+  └─ dataGrid.Render(html, "bootstrap-tablegrid", properties)
+      └─ 產出的 HTML 套 bootstrap-tablegrid 範本（而非 bootstrap-datagrid）
+```
+
+差異重點：
+- **範本**：`bootstrap-tablegrid`（Bootstrap Table 樣式） vs DataGrid 的 `bootstrap-datagrid`（EasyUI 樣式）
+- **不複製**：只讀屬性（集合）靠 foreach 補；`CanWrite == false` 的屬性自動跳過
+- **`FixedColumns`**：不在 CopyProperty 範圍內，以 `fixedColumns:N` 字串形式塞進 data-options
+
+### 渲染後 HTML 結構
+
+伺服器端產出的 HTML 骨架，經前端 `$.fn.tablegrid.init` 加工後（Bootstrap Table 的 `bootstrapTable()` 接管）：
+
+```
+div.table-responsive
+  div.tablegrid-toolitem                ← 工具列按鈕
+  div.fixed-table-container             ← Bootstrap Table 包裝層
+    div.fixed-table-header              ← 固定表頭（分離出的 thead）
+      table.bootstrap-tablegrid.table
+        thead > tr
+          th.command                    ← view/edit/delete 按鈕欄（有 *CommandVisible 時）
+          th.rowcheck                   ← 勾選欄（showCheckbox）
+          th.rownumber                  ← 行號欄（rownumbers）
+          th[data-field]                ← 各資料欄位，含 data-halign/data-align
+    div.fixed-table-body                ← 可捲動資料區（virtualScroll 啟用）
+      table.bootstrap-tablegrid.table
+        tbody
+          tr[data-index]                ← 每筆資料一列
+            td.bt-td-cell               ← 儲存格，title 屬性為顯示值（tooltip）
+              span.datagrid-btn         ← command 欄的按鈕（pencil/remove/eye-open）
+    div.fixed-table-footer              ← 合計列（showFooter，footerStyle: bg-info）
+  div.clearfix
+    ul.pagination                       ← 分頁按鈕列
+    div.pageTo                          ← 跳頁輸入框（pageJump）
+    div.pageList                        ← 每頁筆數下拉（pageList）
+
+<head>
+  <style>                               ← init 動態注入的欄寬 CSS
+    .bt-td-width-1 { min-width: 80px; max-width: 80px; width: 80px; }
+    .bt-td-width-2 { ... }
+  </style>
+```
+
+與 DataGrid 骨架的關鍵差異：
+- 多一層 `fixed-table-container` / `fixed-table-header` / `fixed-table-body` / `fixed-table-footer`（Bootstrap Table 原生結構，支援虛擬捲動與固定表頭）
+- 欄寬以 CSS class `.bt-td-width-N` 實作（init 時動態注入 `<style>` 至 `<head>`），而非 `<td>` 的 `style` 屬性
+- `tbody > tr` 使用 `data-index` 屬性定位（Bootstrap Table 規則），而非 DataGrid 的 `tr.dataRow`
+- `tfoot` 改由 `div.fixed-table-footer` 渲染
 
 ## 備註
 
