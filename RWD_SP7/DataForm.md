@@ -17,31 +17,6 @@ DataForm 支援：
 - 欄位安全控管（Hidden）
 - 多國語系（`[Localization]`）
 
-## JSON 設定範例
-
-```json
-{
-  "type": "dataform",
-  "id": "masterForm",
-  "remoteName": "masterCmd",
-  "mode": "Dialog",
-  "title": "主檔編輯",
-  "horizontalColumnsCount": 2,
-  "duplicateCheck": true,
-  "validateStyle": "Hint",
-  "closeProtect": true,
-  "columns": [
-    { "field": "USERID", "title": "使用者代號", "span": 1 },
-    { "field": "USERNAME", "title": "使用者名稱", "span": 1 },
-    { "field": "EMAIL", "title": "電子郵件", "span": 2, "newRow": true, "editor": { "type": "textbox" } }
-  ],
-  "toolItems": [
-    { "text": "Add", "iconCls": "glyphicon-plus", "onclick": "insert_row" },
-    { "text": "Save", "iconCls": "glyphicon-floppy-disk", "onclick": "submit" }
-  ]
-}
-```
-
 ## 設計介面屬性
 
 | 屬性 | 類型 | 設計介面 | 預設值 | 說明 |
@@ -139,23 +114,6 @@ DataForm 支援：
 ### PromtForm（衍生類別）
 
 提示表單。按鈕為 OK / Cancel，無查詢功能。
-
-## 渲染流程
-
-```
-Render()
-  ├─ RenderQuery()          → 若有 QueryColumns，建立 QueryForm 並渲染
-  ├─ 判斷 IsDialog
-  │   ├─ true  → 渲染 Bootstrap Modal（modal-dialog / modal-content）
-  │   └─ false → 渲染 Bootstrap Panel（panel-group / panel-collapse）
-  ├─ RenderToolItems()      → 依 ToolItemPosition 在表單上方或下方渲染工具列
-  ├─ RenderForm()           → 渲染 <form> 及所有欄位
-  │   ├─ 整合 Default / Validate / AutoSeq 元件設定
-  │   ├─ VisibleColumns → 依 HorizontalColumnsCount 排版
-  │   └─ HiddenColumns → 渲染為 hidden input
-  ├─ RenderChildren()       → 渲染子控件（如 DataPanel）
-  └─ RenderButtons()        → 渲染 OK / Cancel 按鈕（footer）
-```
 
 ## 前端使用範例
 
@@ -815,6 +773,54 @@ DataForm 透過 `isShowFlowIcon` 選項與 `$.fn.flow` 模組整合：
 | `removeLock(row)` | row?: Object | jq | 釋放記錄鎖定 |
 | `refreshTabGrid()` | — | jq | Tab 模式下透過 postMessage 通知主頁籤重新載入 Grid |
 | `onEvent(param)` | { events, parameters } | bool | 依序觸發指定事件，任一回傳 false 則中斷 |
+
+## 技術參考（AI / 深度使用）
+
+> 此區段彙整結構化內容 — JSON schema 範例、伺服器端渲染管線 — 供 AI 檢索或需要深入理解元件行為的開發者參考。日常設定看前面的「設計介面屬性」、「事件」、「JavaScript API 操作範例」即可。
+
+### JSON 設定範例
+
+```json
+{
+  "type": "dataform",
+  "id": "masterForm",
+  "remoteName": "masterCmd",
+  "mode": "Dialog",
+  "title": "主檔編輯",
+  "horizontalColumnsCount": 2,
+  "duplicateCheck": true,
+  "validateStyle": "Hint",
+  "closeProtect": true,
+  "columns": [
+    { "field": "USERID", "title": "使用者代號", "span": 1 },
+    { "field": "USERNAME", "title": "使用者名稱", "span": 1 },
+    { "field": "EMAIL", "title": "電子郵件", "span": 2, "newRow": true, "editor": { "type": "textbox" } }
+  ],
+  "toolItems": [
+    { "text": "Add", "iconCls": "glyphicon-plus", "onclick": "insert_row" },
+    { "text": "Save", "iconCls": "glyphicon-floppy-disk", "onclick": "submit" }
+  ]
+}
+```
+
+### 渲染流程（伺服器端）
+
+```
+Render()
+  ├─ RenderQuery()          → 若有 QueryColumns，建立 QueryForm 並渲染
+  ├─ 判斷 IsDialog
+  │   ├─ true  → 渲染 Bootstrap Modal（modal-dialog / modal-content）
+  │   └─ false → 渲染 Bootstrap Panel（panel-group / panel-collapse）
+  ├─ RenderToolItems()      → 依 ToolItemPosition 在表單上方或下方渲染工具列
+  ├─ RenderForm()           → 渲染 <form> 及所有欄位
+  │   ├─ 整合 Default / Validate / AutoSeq 元件設定
+  │   ├─ VisibleColumns → 依 HorizontalColumnsCount 排版
+  │   └─ HiddenColumns → 渲染為 hidden input
+  ├─ RenderChildren()       → 渲染子控件（如 DataPanel）
+  └─ RenderButtons()        → 渲染 OK / Cancel 按鈕（footer）
+```
+
+依 `Mode` 差異：`Dialog` / `Tab` 渲染為 Bootstrap Modal，`Panel` 渲染為可摺疊 Panel。`HorizontalColumnsCount` 控制欄位寬度（`colSpan = 12 / horizontalColumnsCount * span - labelSpan`）。
 
 ## 備註
 
