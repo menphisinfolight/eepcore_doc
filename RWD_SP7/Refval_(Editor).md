@@ -45,29 +45,6 @@
 
 > 原始碼：`bootstrap.infolight.js` 第 10117–10549 行（`$.fn.refval`）
 
-### 渲染結構
-
-`init` 將 `<input>` 包裝為：
-
-```html
-<div class="row">
-  <div class="{valueCls|col-xs-12}">
-    <div class="input-group">
-      <input ...原始 input... />
-      <span class="input-group-btn">
-        <button class="btn btn-default form-btn glyphicon glyphicon-search"></button>
-      </span>
-    </div>
-  </div>
-  <div class="{textCls|hide}">
-    <p class="form-control-static refval-text"></p>
-  </div>
-</div>
-```
-
-- `valueCls` / `textCls` 控制值欄位與文字欄位的 Bootstrap grid class。
-- 若 `selectOnly == true`，input 會被設為 `readOnly`。
-
 ### 公開 API 方法
 
 | 方法 | 說明 |
@@ -306,6 +283,99 @@ console.log(wheres);
 | onSelect 清空時 row 是 `{}` 而非 null | 邏輯判斷要用 `row.valueField` 才對 | `if (row && row.USER_CODE)` |
 | 動態 `setWhere` 後舊值仍殘留 | whereStr 改了不會自動重查 | 手動 `setValue('')` 清空 |
 | `setValue('')` 不會觸發 onSelect | 只有 blur/select 才會觸發 | 手動呼叫 onSelect 或 trigger blur |
+
+## 技術參考（AI / 深度使用）
+
+> 此區段彙整結構化內容 — JSON schema 範例、渲染結構 — 供 AI 檢索或需要深入理解元件行為的開發者參考。日常設定看前面的「設計介面屬性」、「JavaScript 範例」、「常見陷阱」即可。
+
+### JSON 設定範例
+
+```json
+// 基本款：使用者代號查詢
+{
+  "type": "refval",
+  "id": "USER_CODE",
+  "remoteName": "員工資料",
+  "valueField": "USER_CODE",
+  "textField": "USER_NAME",
+  "valueTitle": "員工編號",
+  "textTitle": "員工姓名",
+  "checkData": true,
+  "selectOnly": false,
+  "pageSize": 10,
+  "columns": [
+    { "field": "USER_CODE", "title": "員工編號", "sortable": true },
+    { "field": "USER_NAME", "title": "員工姓名" },
+    { "field": "DEPT_CODE", "title": "部門" }
+  ]
+}
+
+// 主從連動：部門改變時員工 Refval 自動限縮
+{
+  "type": "refval",
+  "id": "USER_CODE",
+  "remoteName": "員工資料",
+  "valueField": "USER_CODE",
+  "textField": "USER_NAME",
+  "whereItems": [
+    { "targetField": "DEPT_CODE", "operator": "=", "sourceField": "DEPT_CODE" }
+  ]
+}
+
+// 欄位對應回寫：選取後自動帶入姓名、部門
+{
+  "type": "refval",
+  "id": "USER_CODE",
+  "remoteName": "員工資料",
+  "valueField": "USER_CODE",
+  "textField": "USER_NAME",
+  "columnMatchs": [
+    { "targetField": "USER_NAME", "sourceField": "USER_NAME" },
+    { "targetField": "DEPT_CODE", "sourceField": "DEPT_CODE" }
+  ]
+}
+
+// 模糊查詢模式（彈窗上方多出「全欄位關鍵字」輸入框）
+{
+  "type": "refval",
+  "id": "PROD_CODE",
+  "remoteName": "商品主檔",
+  "valueField": "PROD_CODE",
+  "textField": "PROD_NAME",
+  "queryMode": "fuzzy",
+  "columns": [
+    { "field": "PROD_CODE", "title": "品號" },
+    { "field": "PROD_NAME", "title": "品名" },
+    { "field": "SPEC",      "title": "規格" }
+  ]
+}
+```
+
+`WhereItem.Value` 支援五種來源：`Constant`（常數）、`Variable`（系統變數）、`Row`（同表單/同列欄位）、`Function`（JS 函式）、`Parent`（父元件欄位），對應不同 `IValueType` 實作類別。
+
+### 渲染結構
+
+Refval 不走伺服器端 Render — 設計介面儲存的 JSON 由前端 `$.fn.refval` 的 `init` 將原始 `<input>` 包裝為：
+
+```html
+<div class="row">
+  <div class="{valueCls|col-xs-12}">
+    <div class="input-group">
+      <input ...原始 input... />
+      <span class="input-group-btn">
+        <button class="btn btn-default form-btn glyphicon glyphicon-search"></button>
+      </span>
+    </div>
+  </div>
+  <div class="{textCls|hide}">
+    <p class="form-control-static refval-text"></p>
+  </div>
+</div>
+```
+
+- `valueCls` / `textCls` 控制值欄位與文字欄位的 Bootstrap grid class。
+- 若 `selectOnly == true`，input 會被設為 `readOnly`（只能從彈窗選取，不能手輸）。
+- 點擊搜尋鈕或 Enter 觸發 `openModal` 時動態建立 Bootstrap Modal，內含 `table.refval-table` 的 DataGrid；選取列後回寫 value + 更新 `.refval-text` + 執行 `doColumnMatch` + 觸發 `onSelect`。
 
 ## 備註
 
