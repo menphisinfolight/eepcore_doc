@@ -43,6 +43,7 @@ SYS_ORG ──(ORG_KIND)──> SYS_ORGKIND   （組織類型）
 | `EEPServerTools.Core/Adapter/Flow.cs` | `FlowProvider.GetManagerID()`：流程簽核時查詢上層主管 |
 | `SystemTable.Core/UserModule.cs` | `org_onBeforeExecuteSQL()`：Runtime 模式 UNION SYS_ORG + SYS_ORGROLES；`ucOrg_onBeforeInsert()`：自動產生 ORG_NO |
 | `EEPWebClient.Core/design/server/SystemTable.json` | `org` infocommand：含 USERNAME 子查詢；`orgRole`：組織→角色明細 |
+| `EEPGlobal.Core/Provider/SecurityProvider.cs` | `ExportOrg()`：匯出組織清單時用遞迴 CTE / `CONNECT BY` 重算 `ORG_TREE` 並 `ORDER BY` 它做樹狀排序（**唯一使用 `ORG_TREE` 欄位的功能**） |
 
 ---
 
@@ -56,7 +57,7 @@ SYS_ORG ──(ORG_KIND)──> SYS_ORGKIND   （組織類型）
 | **UPPER_ORG** | `nvarchar(8)` | NULL | 上層組織編號（空值表示根節點） |
 | **ORG_MAN** | `nvarchar(50)` | NOT NULL | 部門主管（GROUPID，非 USERID） |
 | **LEVEL_NO** | `nvarchar(6)` | NOT NULL | 組織層級代碼（對應 SYS_ORGLEVEL.LEVEL_NO） |
-| **ORG_TREE** | `nvarchar(40)` | NULL | 組織樹路徑（如 `1.101.1011`） |
+| **ORG_TREE** | `nvarchar(40)` | NULL | **衍生排序鍵**（非業務資料）。僅匯出組織清單時即時重算+排序用，平常多為 NULL。格式為串接的兄弟序號（如 `010203`），不是路徑 |
 | **END_ORG** | `nvarchar(4)` | NULL | 是否為末梢組織（`Y`/`N`） |
 | **ORG_FULLNAME** | `nvarchar(254)` | NULL | 組織全名（含上層路徑） |
 
@@ -100,3 +101,4 @@ INSERT INTO SYS_ORG(ORG_NO, ORG_DESC, ORG_KIND, ORG_MAN, LEVEL_NO) VALUES ('1', 
 - ORG_NO 的產生方式為 MAX(ORG_NO)+1，非自動遞增。
 - `org_onBeforeExecuteSQL` 在 Runtime 模式下以 UNION 合併 SYS_ORG（TYPE='R'）和 SYS_ORGROLES JOIN GROUPS（TYPE='U'），讓前端組織樹同時顯示組織單位和角色。
 - OrgKind 預設為 '0'（公司組織），GetManagerID 的所有查詢都以 ORG_KIND 過濾。
+- **ORG_TREE 是衍生欄位、不是業務邏輯依賴的資料**：只在 `SecurityProvider.ExportOrg()`（匯出組織清單）時即時重算+排序使用。組織樹的正常載入（`org` infocommand、`AccountProvider.GetOrgs()`、`FlowProvider.GetManagerID()`）都是以 `UPPER_ORG` 父子關係即時遞迴建出，與 `ORG_TREE` 欄位無關。前端 JS 中的 `onOrgTreeBeforeLoad` / `onOrgTreeLoadError` 是組織樹 UI 元件的事件 callback，名稱巧合，與此欄位無關。
